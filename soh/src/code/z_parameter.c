@@ -1,4 +1,5 @@
 #include "global.h"
+#include "soh/Enhancements/HereticsTomb/Katana.h"
 #include "vt.h"
 #include "textures/parameter_static/parameter_static.h"
 #include "textures/do_action_static/do_action_static.h"
@@ -5275,6 +5276,7 @@ void Interface_Draw(PlayState* play) {
                     case SCENE_GANONS_TOWER_COLLAPSE_INTERIOR:
                     case SCENE_INSIDE_GANONS_CASTLE_COLLAPSE:
                     case SCENE_TREASURE_BOX_SHOP:
+                    case SCENE_HERETICS_TOMB:
                         if (gSaveContext.inventory.dungeonKeys[gSaveContext.mapIndex] >= 0) {
                             s16 X_Margins_SKC;
                             s16 Y_Margins_SKC;
@@ -5443,7 +5445,11 @@ void Interface_Draw(PlayState* play) {
             // B Button Icon & Ammo Count
             if (gSaveContext.equips.buttonItems[0] != ITEM_NONE) {
                 if (fullUi) {
-                    Interface_DrawItemIconTexture(play, gItemIcons[gSaveContext.equips.buttonItems[0]], 0);
+                    // Heretics Tomb: the katana's own icon
+                    Interface_DrawItemIconTexture(play,
+                                                  Katana_IsEquipped() ? (void*)KATANA_ICON_TEX_PATH
+                                                                      : gItemIcons[gSaveContext.equips.buttonItems[0]],
+                                                  0);
                 }
 
                 if ((player->stateFlags1 & PLAYER_STATE1_ON_HORSE) || (play->shootingGalleryStatus > 1) ||

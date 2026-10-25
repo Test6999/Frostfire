@@ -7,6 +7,7 @@
 #include "z_bg_haka_trap.h"
 #include "objects/object_haka_objects/object_haka_objects.h"
 #include "soh/Enhancements/savestate_serialize.h"
+#include "soh/ResourceManagerHelpers.h"
 
 #define FLAGS 0
 
@@ -123,6 +124,11 @@ void BgHakaTrap_Init(Actor* thisx, PlayState* play) {
 
     Actor_ProcessInitChain(thisx, sInitChain);
     thisx->params &= 0xFF;
+    // Heretics Tomb: a fan's wind must blow while it's off screen too (an actor out of view stops updating: turning
+    // the camera away from the fan behind Link stopped the gale)
+    if ((play->sceneNum == SCENE_HERETICS_TOMB) && (thisx->params == HAKA_TRAP_PROPELLER)) {
+        thisx->flags |= ACTOR_FLAG_UPDATE_CULLING_DISABLED;
+    }
 
     if (thisx->params != HAKA_TRAP_PROPELLER) {
         Collider_InitCylinder(play, &this->colliderCylinder);
@@ -188,6 +194,12 @@ void BgHakaTrap_Init(Actor* thisx, PlayState* play) {
         this->timer = 40;
         this->actionFunc = BgHakaTrap_FanBlade_Idle;
         thisx->uncullZoneScale = 500.0f;
+        if (play->sceneNum == SCENE_HERETICS_TOMB) {
+            // Heretics Tomb: the fans blow at full strength from the start, and never stop
+            thisx->world.rot.z = 0x3A00;
+            this->timer = 100;
+            this->actionFunc = BgHakaTrap_FireBarrier_UpdateLayout;
+        }
     }
 
     CollisionCheck_SetInfo(&thisx->colChkInfo, 0, &sColChkInfoInit);
@@ -306,8 +318,11 @@ void BgHakaTrap_Guillotine_Fall(BgHakaTrap* this, PlayState* play) {
         this->timer -= 1;
     }
 
-    sp24 =
-        Math_StepToF(&this->dyna.actor.world.pos.y, this->dyna.actor.home.pos.y - 185.0f, this->dyna.actor.velocity.y);
+    // (Heretics Tomb: the blades are drawn with a level edge, see BgHakaTrap_Draw, 10 above the vanilla blade's low
+    // tip: they fall 10 further, so the whole edge meets the platform)
+    f32 dropDist = (play->sceneNum == SCENE_HERETICS_TOMB) ? 195.0f : 185.0f;
+    sp24 = Math_StepToF(&this->dyna.actor.world.pos.y, this->dyna.actor.home.pos.y - dropDist,
+                        this->dyna.actor.velocity.y);
     timer = this->timer;
 
     if ((timer == 10 && !this->unk_16A) || (timer == 13 && this->unk_16A)) {
@@ -444,6 +459,25 @@ void BgHakaTrap_FanBlade_UpdateFanRotation(BgHakaTrap* this, PlayState* play, s1
 
     Actor_WorldToActorCoords(&this->dyna.actor, &sp18, &player->actor.world.pos);
 
+    if (play->sceneNum == SCENE_HERETICS_TOMB) {
+        // Heretics Tomb: the wind fills the whole corridor in front of the fan and reaches its far end, strong
+        // enough to carry Link back to the door - unless he wears the Iron Boots
+        // (it stops 100 short of the door at the corridor's far end: Link is held against the door's ledge, not
+        // pushed into the door - a shutter opens to anyone walking into it)
+        // rotZ != 0 (B2): a room-wide wind - its half width in 10-unit steps (low byte), its reach in 40-unit steps (high byte)
+        f32 halfW = 110.0f, reach = 1080.0f;
+
+        if (this->dyna.actor.home.rot.z != 0) {
+            halfW = (this->dyna.actor.home.rot.z & 0xFF) * 10.0f;
+            reach = (((u16)this->dyna.actor.home.rot.z >> 8) & 0xFF) * 40.0f; // (the whole high byte: up to 10200)
+        }
+        if ((fabsf(sp18.x) < halfW) && (fabsf(sp18.y) < 250.0f) && (sp18.z > -20.0f) && (sp18.z < reach) &&
+            (GET_PLAYER(play)->currentBoots != PLAYER_BOOTS_IRON)) {
+            player->pushedSpeed = 13.0f * arg2 * (1.0f / 0x3A00);
+            player->pushedYaw = this->dyna.actor.shape.rot.y;
+        }
+        return;
+    }
     if ((fabsf(sp18.x) < 70.0f) && (fabsf(sp18.y) < 100.0f) && (sp18.z < 500.0f) &&
         (GET_PLAYER(play)->currentBoots != PLAYER_BOOTS_IRON)) {
         player->pushedSpeed = ((500.0f - sp18.z) * 0.06f + 5.0f) * arg2 * (1.0f / 0x3A00) * (2.0f / 3.0f);
@@ -473,7 +507,7 @@ void BgHakaTrap_FireBarrier_Idle(BgHakaTrap* this, PlayState* play) {
 }
 
 void BgHakaTrap_FireBarrier_UpdateLayout(BgHakaTrap* this, PlayState* play) {
-    if (this->timer != 0) {
+    if ((this->timer != 0) && (play->sceneNum != SCENE_HERETICS_TOMB)) { // Heretics Tomb: the fans never stop
         this->timer--;
     }
 
@@ -524,6 +558,26 @@ void BgHakaTrap_GetSwitchFlag(BgHakaTrap* this) {
     Collider_SetTrisVertices(&this->colliderSpikes, 1, &vec1, &vec3, &vec2);
 }
 
+// Heretics Tomb: in the tomb the guillotine's edge is level. The vanilla blade's vertices are edited in place (the edge
+// and its bevel straightened, y += x / 6 below the blade's top band) while in the tomb, and put back anywhere else.
+static void BgHakaTrap_LevelBlade(s32 level) {
+    static const s16 sVanillaY[10] = { 260, 360, 926, 926, 160, 200, 360, 260, 0, 160 };
+    Vtx* vtx = ResourceMgr_LoadVtxByName((char*)"__OTR__objects/object_haka_objects/object_haka_objectsVtx_0074B0");
+    s32 i;
+
+    if ((vtx == NULL) || (vtx[8].v.ob[1] == (level ? 100 : 0))) {
+        return;
+    }
+    for (i = 0; i < 10; i++) {
+        s16 y = sVanillaY[i];
+
+        if (level && (vtx[i].v.ob[2] == 0) && (y <= 360)) {
+            y += vtx[i].v.ob[0] / 6;
+        }
+        vtx[i].v.ob[1] = y;
+    }
+}
+
 void BgHakaTrap_Draw(Actor* thisx, PlayState* play) {
     static Gfx* sDLists[5] = {
         object_haka_objects_DL_007610, object_haka_objects_DL_009860, object_haka_objects_DL_007EF0,
@@ -538,6 +592,9 @@ void BgHakaTrap_Draw(Actor* thisx, PlayState* play) {
         func_80026230(play, &D_8088103C, this->timer + 20, 0x28);
     }
 
+    if (this->dyna.actor.params == HAKA_TRAP_GUILLOTINE_SLOW) {
+        BgHakaTrap_LevelBlade(play->sceneNum == SCENE_HERETICS_TOMB);
+    }
     Gfx_DrawDListOpa(play, sDLists[this->dyna.actor.params]);
 
     if (this->actionFunc == BgHakaTrap_SpikedWall_CloseIn) {

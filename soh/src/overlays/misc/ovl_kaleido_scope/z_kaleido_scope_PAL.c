@@ -1,4 +1,5 @@
 #include "z_kaleido_scope.h"
+#include "soh/Enhancements/HereticsTomb/Katana.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -2442,9 +2443,15 @@ void KaleidoScope_UpdateNamePanel(PlayState* play) {
         (CVarGetInteger(CVAR_ENHANCEMENT("PauseAnyCursor"), 0) == PAUSE_ANY_CURSOR_RANDO_ONLY && IS_RANDO) ||
         (CVarGetInteger(CVAR_ENHANCEMENT("PauseAnyCursor"), 0) == PAUSE_ANY_CURSOR_ALWAYS_ON);
 
-    if ((pauseCtx->namedItem != pauseCtx->cursorItem[pauseCtx->pageIndex]) ||
+    // Heretics Tomb: the katana cell shows its own name; force a reload whenever the cursor
+    // moves onto or off it, since it reports the Master Sword's item id.
+    static bool sNamedKatana = false;
+    bool katanaName = (pauseCtx->pageIndex == PAUSE_EQUIP) && KaleidoScope_IsKatanaCursorActive();
+
+    if ((pauseCtx->namedItem != pauseCtx->cursorItem[pauseCtx->pageIndex]) || (katanaName != sNamedKatana) ||
         ((pauseCtx->pageIndex == PAUSE_MAP) && (pauseCtx->cursorSpecialPos != 0))) {
 
+        sNamedKatana = katanaName;
         pauseCtx->namedItem = pauseCtx->cursorItem[pauseCtx->pageIndex];
         sp2A = pauseCtx->namedItem;
 
@@ -2495,7 +2502,7 @@ void KaleidoScope_UpdateNamePanel(PlayState* play) {
 
                 osSyncPrintf("J_N=%d  point=%d\n", gSaveContext.language, sp2A);
 
-                const char* textureName = iconNameTextures[sp2A];
+                const char* textureName = katanaName ? KATANA_NAME_TEX_PATH : iconNameTextures[sp2A];
 
                 if (!GameInteractor_Should(VB_DRAW_CUSTOM_ITEM_NAME, false, pauseCtx->namedItem)) {
                     memcpy(pauseCtx->nameSegment, textureName, strlen(textureName) + 1);
@@ -3288,6 +3295,20 @@ void KaleidoScope_InitVertices(PlayState* play, GraphicsContext* gfxCtx) {
         }
     }
 
+    // Heretics Tomb: with the katana owned the sword row holds 4 swords, so its icons
+    // shrink to 24x24 at a 26-unit pitch, keeping all 4 inside the vanilla 3-sword span.
+    if (Katana_IsOwned()) {
+        for (s16 col = 1; col <= 3; col++) {
+            Vtx* v = &pauseCtx->equipVtx[col * 4];
+            s16 x0 = 4 + (col - 1) * 26;
+            s16 y0 = v[0].v.ob[1] - 2;
+            v[0].v.ob[0] = v[2].v.ob[0] = x0;
+            v[1].v.ob[0] = v[3].v.ob[0] = x0 + 24;
+            v[0].v.ob[1] = v[1].v.ob[1] = y0;
+            v[2].v.ob[1] = v[3].v.ob[1] = y0 - 24;
+        }
+    }
+
     for (phi_t3 = 0; phi_t3 < 4; phi_t3++, phi_t4 += 4) {
         if (CUR_EQUIP_VALUE(phi_t3) != 0) {
             phi_t2 = (CUR_EQUIP_VALUE(phi_t3) + D_8082B134[phi_t3] - 1) * 4;
@@ -3326,6 +3347,16 @@ void KaleidoScope_InitVertices(PlayState* play, GraphicsContext* gfxCtx) {
             pauseCtx->equipVtx[phi_t4 + 0].v.cn[3] = pauseCtx->equipVtx[phi_t4 + 1].v.cn[3] =
                 pauseCtx->equipVtx[phi_t4 + 2].v.cn[3] = pauseCtx->equipVtx[phi_t4 + 3].v.cn[3] = pauseCtx->alpha;
         }
+    }
+
+    // Heretics Tomb: fit the sword outline to the compact sword cells
+    if (Katana_IsOwned() && (CUR_EQUIP_VALUE(EQUIP_TYPE_SWORD) != 0)) {
+        Vtx* cell = &pauseCtx->equipVtx[(CUR_EQUIP_VALUE(EQUIP_TYPE_SWORD) + D_8082B134[0] - 1) * 4];
+        Vtx* o = &pauseCtx->equipVtx[64];
+        o[0].v.ob[0] = o[2].v.ob[0] = cell[0].v.ob[0] - 2;
+        o[1].v.ob[0] = o[3].v.ob[0] = cell[1].v.ob[0] + 2;
+        o[0].v.ob[1] = o[1].v.ob[1] = cell[0].v.ob[1] + 2;
+        o[2].v.ob[1] = o[3].v.ob[1] = cell[2].v.ob[1] - 2;
     }
 
     phi_t1 = 112;
@@ -3774,6 +3805,9 @@ void KaleidoScope_RegisterUpdatedDungeonMapTexture() {
     if (R_PAUSE_MENU_MODE < 3 || pauseCtx->state < 4 || pauseCtx->state > 7 || !sInDungeonScene) {
         return;
     }
+    if (gPlayState->sceneNum == SCENE_HERETICS_TOMB) {
+        return; // (no vanilla map textures)
+    }
 
     KaleidoScope_UpdateDungeonMap(gPlayState);
 
@@ -3937,6 +3971,11 @@ void KaleidoScope_Update(PlayState* play) {
                     interfaceCtx->mapPalette[28] = 6;
                     interfaceCtx->mapPalette[29] = 99;
                     KaleidoScope_UpdateDungeonMap(play);
+                    break;
+
+                case SCENE_HERETICS_TOMB:
+                    // (its own map page: z_kaleido_map_PAL.c, HtMap.c - none of the vanilla map data)
+                    sInDungeonScene = true;
                     break;
 
                 default:

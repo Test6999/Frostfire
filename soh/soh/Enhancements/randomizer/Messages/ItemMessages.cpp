@@ -238,7 +238,17 @@ void DrawCustomItemIcon(Gfx** p) {
     *p = gfx;
 }
 
+// Heretics Tomb: its chests hold the vanilla items (no randomizer check there), so their get-item texts stay vanilla -
+// the builders below read the item as a randomizer one and named the wrong things
+// (Link's getItemEntry can still hold the last randomizer item he got - a chest's vanilla item doesn't always replace it)
+static bool HtTomb_VanillaGetItem() {
+    return (gPlayState != nullptr) && (gPlayState->sceneNum == SCENE_HERETICS_TOMB);
+}
+
 void BuildItemMessage(u16* textId, bool* loadFromMessageTable) {
+    if (HtTomb_VanillaGetItem()) {
+        return;
+    }
     Player* player = GET_PLAYER(gPlayState);
     CustomMessage msg;
 
@@ -256,6 +266,9 @@ void BuildItemMessage(u16* textId, bool* loadFromMessageTable) {
 }
 
 void BuildMapMessage(uint16_t* textId, bool* loadFromMessageTable) {
+    if (HtTomb_VanillaGetItem()) {
+        return;
+    }
     GetItemEntry itemEntry = GET_PLAYER(gPlayState)->getItemEntry;
     auto ctx = OTRGlobals::Instance->gRandoContext;
     CustomMessage msg =
@@ -312,6 +325,9 @@ void BuildMapMessage(uint16_t* textId, bool* loadFromMessageTable) {
 }
 
 void BuildBossKeyMessage(uint16_t* textId, bool* loadFromMessageTable) {
+    if (HtTomb_VanillaGetItem()) {
+        return;
+    }
     Player* player = GET_PLAYER(gPlayState);
     if (player->getItemEntry.getItemId == RG_GANONS_CASTLE_BOSS_KEY &&
         !DUNGEON_ITEMS_CAN_BE_OUTSIDE_DUNGEON(RSK_GANONS_BOSS_KEY)) {
@@ -328,6 +344,9 @@ void BuildBossKeyMessage(uint16_t* textId, bool* loadFromMessageTable) {
 }
 
 void BuildSmallKeyMessage(uint16_t* textId, bool* loadFromMessageTable) {
+    if (HtTomb_VanillaGetItem()) {
+        return;
+    }
     Player* player = GET_PLAYER(gPlayState);
     if (player->getItemEntry.getItemId == RG_GERUDO_FORTRESS_SMALL_KEY &&
         OTRGlobals::Instance->gRandoContext->GetOption(RSK_GERUDO_KEYS).Is(RO_GERUDO_KEYS_VANILLA)) {

@@ -30,7 +30,10 @@ typedef struct EnVm {
     /* 0x0268 */ ColliderCylinder colliderCylinder;
     /* 0x02B4 */ ColliderQuad colliderQuad1;
     /* 0x0334 */ ColliderQuad colliderQuad2;
-} EnVm; // size = 0x03B4
+    // Heretics Tomb: the katana froze its eye (an ice block over it while it's stunned)
+    u8 htEyeIced;
+    MtxF htHeadMtx;
+} EnVm;
 
 typedef enum {
     /* 0x00 */ BEAMOS_LARGE,

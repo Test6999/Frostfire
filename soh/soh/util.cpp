@@ -125,6 +125,7 @@ std::vector<std::string> sceneNames = {
     "Castle Hedge Maze (Early)",
     "Sasa Test",
     "Treasure Chest Room",
+    "Heretics Tomb",
     "Unknown",
 };
 

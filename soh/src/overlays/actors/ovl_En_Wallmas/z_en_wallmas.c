@@ -398,8 +398,10 @@ void EnWallmas_ReturnToCeiling(EnWallmas* this, PlayState* play) {
             return;
         }
 
+        // Heretics Tomb: a proximity Wallmaster wakes where it waits, then haunts the whole room
         if (this->actor.params == WMT_TIMER ||
-            Math_Vec3f_DistXZ(&this->actor.home.pos, &player->actor.world.pos) < 200.0f) {
+            Math_Vec3f_DistXZ(&this->actor.home.pos, &player->actor.world.pos) < 200.0f ||
+            (play->sceneNum == SCENE_HERETICS_TOMB)) {
             EnWallmas_TimerInit(this, play);
         } else {
             EnWallmas_ProximityOrSwitchInit(this);

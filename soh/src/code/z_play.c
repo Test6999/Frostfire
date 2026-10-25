@@ -13,6 +13,7 @@
 #include "soh/ResourceManagerHelpers.h"
 #include "soh/SaveManager.h"
 #include "soh/framebuffer_effects.h"
+#include "soh/Enhancements/HereticsTomb/HtShadowPad.h"
 
 #include <time.h>
 #include <assert.h>
@@ -564,6 +565,7 @@ void Play_Init(GameState* thisx) {
     gSlotAgeReqs[SLOT_NAYRUS_LOVE] = AGE_REQ_NONE;
 
     Actor_InitContext(play, &play->actorCtx, play->linkActorEntry);
+    HtTomb_RestoreFlags(play); // (Frostfire Mausoleum: its switch flags 0x20-0x3F, as Link left them)
 
     while (!func_800973FC(play, &play->roomCtx)) {
         ; // Empty Loop

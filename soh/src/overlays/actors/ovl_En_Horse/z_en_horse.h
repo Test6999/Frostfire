@@ -160,6 +160,13 @@ typedef struct EnHorse {
     /* 0x03D8 */ Vec3f frontLeftHoof;
     /* 0x03E4 */ Vec3f backRightHoof;
     /* 0x03F0 */ Vec3f backLeftHoof;
+    // Heretics Tomb: the black horse (soh/Enhancements/HereticsTomb/HtHorse.h)
+    u8 htBlack;      // this is the black horse (Ganon's horse's skeleton, its own animations)
+    u8 htStable;     // ...the one waiting in Lon Lon's stable (talk to swap)
+    u8 htTalking;
+    u8 htSwap;       // (swapped: the stall's horse changes over)
+    u8 htPlaced;     // (the stall's horse: put in its free stall, once the stable's animals are in theirs)
+    Vec3f htHooves[4];
 } EnHorse; // size = 0x03FC
 
 #define EN_HORSE_CHECK_1(horseActor) \

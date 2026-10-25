@@ -1,4 +1,5 @@
 #include "global.h"
+#include "soh/Enhancements/HereticsTomb/HtHorse.h"
 #include "z64camera.h"
 
 #include <string.h>
@@ -2202,7 +2203,12 @@ void Cutscene_HandleEntranceTriggers(PlayState* play) {
             (!Flags_GetEventChkInf(entranceCutscene->flag) || (entranceCutscene->flag == EVENTCHKINF_EPONA_OBTAINED)) &&
             (gSaveContext.cutsceneIndex < 0xFFF0) && ((u8)gSaveContext.linkAge == requiredAge) &&
             (gSaveContext.respawnFlag <= 0)) {
-            Flags_SetEventChkInf(entranceCutscene->flag);
+            // (Heretics Tomb: the fence jumps out of Lon Lon Ranch mark Epona won - vanilla can't jump them without
+            // her. On the black horse they don't: only her escape with Ingo's gate (Hyrule Field 15) wins her)
+            if (!((entranceCutscene->flag == EVENTCHKINF_EPONA_OBTAINED) && HtHorse_BlackActive() &&
+                  (gSaveContext.entranceIndex != ENTR_HYRULE_FIELD_15))) {
+                Flags_SetEventChkInf(entranceCutscene->flag);
+            }
             if (GameInteractor_Should(VB_PLAY_ENTRANCE_CS, true, entranceCutscene->flag, entranceCutscene->entrance,
                                       entranceCutscene->segAddr)) {
                 Cutscene_SetSegment(play, entranceCutscene->segAddr);

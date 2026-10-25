@@ -3,6 +3,9 @@
 #include <assert.h>
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
+#include "soh/Enhancements/HereticsTomb/HtHorse.h"
+
+int gHtHorseSpawnBlack = false; // (HtHorse.h)
 
 s32 Horse_CanSpawn(s32 scene) {
     s32 validScenes[] = { SCENE_HYRULE_FIELD, SCENE_LAKE_HYLIA, SCENE_GERUDO_VALLEY, SCENE_GERUDOS_FORTRESS,
@@ -51,7 +54,8 @@ void Horse_SetupInGameplay(PlayState* play, Player* player) {
         { SCENE_LON_LON_RANCH, 928, 0, -2280, 0, 2 },
     };
 
-    if ((AREG(6) != 0) && (Flags_GetEventChkInf(EVENTCHKINF_EPONA_OBTAINED) || (DREG(1) != 0))) {
+    // (Heretics Tomb: Link's horse may be the black horse - HtHorse_HasHorse)
+    if ((AREG(6) != 0) && (Flags_GetEventChkInf(EVENTCHKINF_EPONA_OBTAINED) || HtHorse_BlackOwned() || (DREG(1) != 0))) {
         player->rideActor = Actor_Spawn(&play->actorCtx, play, ACTOR_EN_HORSE, player->actor.world.pos.x,
                                         player->actor.world.pos.y, player->actor.world.pos.z, player->actor.shape.rot.x,
                                         player->actor.shape.rot.y, player->actor.shape.rot.z, 9);
@@ -76,7 +80,7 @@ void Horse_SetupInGameplay(PlayState* play, Player* player) {
             Actor_Spawn(&play->actorCtx, play, ACTOR_EN_HORSE, -25.0f, 0.0f, -1600.0f, 0, -0x4000, 0, 1);
         assert(horseActor != NULL);
     } else if ((play->sceneNum == gSaveContext.horseData.scene) &&
-               (((Flags_GetEventChkInf(EVENTCHKINF_EPONA_OBTAINED) != 0) &&
+               ((HtHorse_HasHorse(play) &&
                  (!IS_RANDO || (IS_RANDO && CHECK_QUEST_ITEM(QUEST_SONG_EPONA) &&
                                 GameInteractor_Should(VB_HAVE_OCARINA_NOTE_D5, true) &&
                                 GameInteractor_Should(VB_HAVE_OCARINA_NOTE_B4, true) &&
@@ -106,7 +110,20 @@ void Horse_SetupInGameplay(PlayState* play, Player* player) {
                (DREG(1) == 0)) {
         Actor* horseActor = Actor_Spawn(&play->actorCtx, play, ACTOR_EN_HORSE, 0.0f, 0.0f, -500.0f, 0, 0, 0, 1);
         assert(horseActor != NULL);
-    } else if (Flags_GetEventChkInf(EVENTCHKINF_EPONA_OBTAINED) || (DREG(1) != 0)) {
+        // (Heretics Tomb: the ranch's Epona, not yet won, stays in her corral for Ingo's story - and Link's black
+        // horse comes too: where he left it here, else out of sight till Epona's Song calls it)
+        if (HtHorse_BlackActive()) {
+            gHtHorseSpawnBlack = true;
+            if (gSaveContext.horseData.scene == SCENE_LON_LON_RANCH) {
+                Actor_Spawn(&play->actorCtx, play, ACTOR_EN_HORSE, gSaveContext.horseData.pos.x,
+                            gSaveContext.horseData.pos.y, gSaveContext.horseData.pos.z, 0, gSaveContext.horseData.angle,
+                            0, 1);
+            } else {
+                Actor_Spawn(&play->actorCtx, play, ACTOR_EN_HORSE, 928.0f, 0.0f, -2280.0f, 0, 0, 0, 2);
+            }
+            gHtHorseSpawnBlack = false;
+        }
+    } else if (HtHorse_HasHorse(play) || (DREG(1) != 0)) {
         for (i = 0; i < ARRAY_COUNT(horseSpawns); i++) {
             HorseSpawn* horseSpawn = &horseSpawns[i];
             if (horseSpawn->scene == play->sceneNum) {

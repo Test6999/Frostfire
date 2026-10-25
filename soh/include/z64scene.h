@@ -320,6 +320,10 @@ enum SceneID {
 // listed in the entrance table
 #define SCENE_UNUSED_6E SCENE_ID_MAX
 
+// Heretics Tomb stores keys/map/compass/boss key in dungeon save slot 17,
+// which vanilla never uses (boss rooms borrow their parent dungeon's slot).
+#define HERETICS_TOMB_MAP_INDEX 17
+
 #undef DEFINE_SCENE
 
 // Entrance Index Enum
@@ -327,7 +331,7 @@ enum SceneID {
 
 typedef enum {
     #include "tables/entrance_table.h"
-    /* 0x614 */ ENTR_MAX
+    /* 0x618 */ ENTR_MAX
 } EntranceIndex;
 
 #define ENTR_LOAD_OPENING -1

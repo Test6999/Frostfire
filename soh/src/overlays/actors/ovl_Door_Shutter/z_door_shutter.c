@@ -153,6 +153,7 @@ static ShutterSceneInfo sSceneInfo[] = {
     { SCENE_GERUDO_TRAINING_GROUND, 0x0E },
     { SCENE_INSIDE_GANONS_CASTLE, 0x0F },
     { SCENE_ROYAL_FAMILYS_TOMB, 0x10 },
+    { SCENE_HERETICS_TOMB, 0x0C }, // Heretics Tomb: Shadow Temple shutters
     { -1, 0x07 },
 };
 
@@ -169,6 +170,7 @@ static BossDoorInfo D_80998288[] = {
     { SCENE_GANONS_TOWER, SCENE_GANONDORF_BOSS, 0x04 },
     { SCENE_FOREST_TEMPLE, SCENE_FOREST_TEMPLE_BOSS, 0x05 },
     { SCENE_SPIRIT_TEMPLE, SCENE_SPIRIT_TEMPLE_BOSS, 0x06 },
+    { SCENE_HERETICS_TOMB, SCENE_HERETICS_TOMB, 0x03 }, // Heretics Tomb: the Shadow Temple's boss door
     { -1, -1, 0x00 },
 };
 
@@ -193,7 +195,10 @@ s32 DoorShutter_SetupDoor(DoorShutter* this, PlayState* play) {
     s32 doorType = this->doorType;
     ShutterObjectInfo* temp_t0 = &sObjectInfo[this->styleType];
 
-    if (doorType != SHUTTER_KEY_LOCKED) {
+    // Heretics Tomb: type 9 = a switch shutter barred from both sides until its flag is set
+    s32 bothSides = (play->sceneNum == SCENE_HERETICS_TOMB) && (((this->dyna.actor.params >> 6) & 0xF) == SHUTTER_9);
+
+    if ((doorType != SHUTTER_KEY_LOCKED) && !bothSides) {
         if (frontRoom == transitionEntry->sides[1].room) {
             if (ABS((s16)(this->dyna.actor.shape.rot.y - this->dyna.actor.yawTowardsPlayer)) < 0x4000) {
                 frontRoom = -1;
@@ -244,6 +249,9 @@ void DoorShutter_Init(Actor* thisx, PlayState* play2) {
     DynaPolyActor_Init(&this->dyna, DPM_UNK);
     this->doorType = (this->dyna.actor.params >> 6) & 0xF;
     phi_a3 = D_80998224[this->doorType];
+    if ((play->sceneNum == SCENE_HERETICS_TOMB) && (this->doorType == SHUTTER_9)) {
+        this->doorType = SHUTTER_FRONT_SWITCH; // Heretics Tomb: barred from both sides (DoorShutter_SetupDoor)
+    }
     if (phi_a3 < 0) {
         ShutterSceneInfo* phi_v1;
 

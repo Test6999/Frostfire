@@ -11,6 +11,7 @@
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/Enhancements/savestate_serialize.h"
 #include <libultraship/bridge/consolevariablebridge.h>
+#include "soh/Enhancements/HereticsTomb/HtMap.h"
 
 MapData* gMapData;
 
@@ -609,6 +610,10 @@ void Map_Init(PlayState* play) {
                 MapMark_Init(play);
             }
             break;
+        case SCENE_HERETICS_TOMB:
+            // Custom dungeon: own save slot, no vanilla minimap/compass data
+            R_MAP_INDEX = gSaveContext.mapIndex = HERETICS_TOMB_MAP_INDEX;
+            break;
     }
 }
 
@@ -888,6 +893,16 @@ void Minimap_Draw(PlayState* play) {
                 }
 
                 break;
+            case SCENE_HERETICS_TOMB:
+                HtMap_DrawMinimap(play);
+                if (CHECK_BTN_ALL(play->state.input[0].press.button, BTN_L) && !Play_InCsMode(play) &&
+                    enableMapToggle) {
+                    Audio_PlaySfxGeneral(R_MINIMAP_DISABLED ? NA_SE_SY_CAMERA_ZOOM_DOWN : NA_SE_SY_CAMERA_ZOOM_UP,
+                                         &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
+                                         &gSfxDefaultReverb);
+                    R_MINIMAP_DISABLED ^= 1;
+                }
+                break;
             case SCENE_HYRULE_FIELD:
             case SCENE_KAKARIKO_VILLAGE:
             case SCENE_GRAVEYARD:
@@ -1156,6 +1171,9 @@ void Map_Update(PlayState* play) {
                 }
 
                 VREG(10) = interfaceCtx->mapRoomNum;
+                break;
+            case SCENE_HERETICS_TOMB:
+                HtMap_Update(play); // (its own map: the room he's in, rooms been in, his floor)
                 break;
             case SCENE_DEKU_TREE_BOSS:
             case SCENE_DODONGOS_CAVERN_BOSS:

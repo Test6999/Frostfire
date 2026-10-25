@@ -9,6 +9,8 @@
 #include "overlays/actors/ovl_En_Bom/z_en_bom.h"
 #include "objects/gameplay_keep/gameplay_keep.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
+#include "soh/Enhancements/HereticsTomb/Katana.h"
+#include "soh/Enhancements/HereticsTomb/HtFlameJet.h" // HtIce_DrawModel
 
 #define FLAGS (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_UPDATE_CULLING_DISABLED)
 
@@ -166,6 +168,9 @@ void EnVm_Destroy(Actor* thisx, PlayState* play) {
 }
 
 void EnVm_SetupWait(EnVm* this) {
+    if (this->htEyeIced) {
+        this->htEyeIced = false; // (the ice gone with the stun)
+    }
     f32 frameCount = Animation_GetLastFrame(&gBeamosAnim);
 
     Animation_Change(&this->skelAnime, &gBeamosAnim, 1.0f, frameCount, frameCount, ANIMMODE_ONCE, 0.0f);
@@ -396,15 +401,35 @@ void EnVm_CheckHealth(EnVm* this, PlayState* play) {
     if (Actor_GetCollidedExplosive(play, &this->colliderCylinder.base) != NULL) {
         this->actor.colChkInfo.health--;
         osSyncPrintf("hp down %d\n", this->actor.colChkInfo.health);
+    } else if ((this->colliderCylinder.base.acFlags & AC_HIT) && (this->colliderCylinder.base.ac != NULL) &&
+               ((this->colliderCylinder.base.ac->id == HT_ACTOR_ICE_SLASH) ||
+                ((this->colliderCylinder.base.ac->id == ACTOR_PLAYER) && Katana_IsEquipped())) &&
+               (this->unk_21C != 2)) {
+        // Heretics Tomb: the katana's frost (its wave, or the blade) reaching any part of it freezes its eye over -
+        // a Beamos's eye is mostly out of a sword's reach, and the low frost wave meets its body first
+        this->colliderCylinder.base.acFlags &= ~AC_HIT;
+        this->htEyeIced = true;
     } else {
         if (!(this->colliderQuad2.base.acFlags & AC_HIT) || this->unk_21C == 2) {
             return;
         }
         this->colliderQuad2.base.acFlags &= ~AC_HIT;
+        {
+            // Heretics Tomb: the katana (its blade or its frost wave) freezes the eye over: the same stun, under ice
+            Actor* ac = this->colliderQuad2.base.ac;
+
+            this->htEyeIced = (ac != NULL) && ((ac->id == HT_ACTOR_ICE_SLASH) ||
+                                               ((ac->id == ACTOR_PLAYER) && Katana_IsEquipped()));
+        }
     }
 
     if (this->actor.colChkInfo.health != 0) {
-        Actor_SetColorFilter(&this->actor, 0x4000, 0xFF, 0, 8);
+        if (this->htEyeIced) {
+            Actor_SetColorFilter(&this->actor, 0, 0xFF, 0, 8); // (a blue flash, not a red one)
+            Audio_PlayActorSound2(&this->actor, NA_SE_EV_ICE_FREEZE);
+        } else {
+            Actor_SetColorFilter(&this->actor, 0x4000, 0xFF, 0, 8);
+        }
         EnVm_SetupStun(this);
     } else {
         bomb = (EnBom*)Actor_Spawn(&play->actorCtx, play, ACTOR_EN_BOM, this->actor.world.pos.x,
@@ -478,6 +503,7 @@ void EnVm_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3s* rot, 
     f32 dist;
 
     if (limbIndex == 2) {
+        Matrix_Get(&this->htHeadMtx); // (Heretics Tomb: where the eye's ice goes)
         Matrix_MultVec3f(&D_80B2EB1C, &this->beamPos1);
         Matrix_MultVec3f(&D_80B2EB28, &this->beamPos2);
 
@@ -543,6 +569,13 @@ void EnVm_Draw(Actor* thisx, PlayState* play2) {
         gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
         gSPSegment(POLY_XLU_DISP++, 0x08, SEGMENTED_TO_VIRTUAL(D_80B2EB88[(play->gameplayFrames + 4) % 8]));
         gSPDisplayList(POLY_XLU_DISP++, gEffEnemyDeathFlameDL);
+    }
+    if (this->htEyeIced && (this->unk_21C == 2)) {
+        // Heretics Tomb: a block of ice over the eye (in the head's space: the eye faces +z, 2000 x 1400 at z 1500-2000)
+        Matrix_Put(&this->htHeadMtx);
+        Matrix_Translate(0.0f, 0.0f, 1600.0f, MTXMODE_APPLY);
+        Matrix_Scale(23.0f, 17.0f, 23.0f, MTXMODE_APPLY);
+        HtIce_DrawModel(play, HT_ICE_BLOCK_DL, 200);
     }
     gSPSegment(POLY_OPA_DISP++, 0x08, func_80094E78(play->state.gfxCtx, 0, this->beamTexScroll));
     Matrix_Translate(this->beamPos1.x, this->beamPos1.y, this->beamPos1.z, MTXMODE_NEW);

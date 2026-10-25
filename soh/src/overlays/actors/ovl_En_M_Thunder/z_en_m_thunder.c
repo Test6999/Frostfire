@@ -1,4 +1,5 @@
 #include "z_en_m_thunder.h"
+#include "soh/Enhancements/HereticsTomb/Katana.h"
 #include "objects/gameplay_keep/gameplay_keep.h"
 
 #define FLAGS 0
@@ -97,7 +98,7 @@ void EnMThunder_Init(Actor* thisx, PlayState* play2) {
 
         player->stateFlags2 &= ~PLAYER_STATE2_SPIN_ATTACKING;
         this->isUsingMagic = 1;
-        this->collider.info.toucher.dmgFlags = sSpinAttackDmgFlags[this->swordType];
+        this->collider.info.toucher.dmgFlags = Katana_GetSpinDmgFlags(sSpinAttackDmgFlags[this->swordType]);
         this->attackStrength = 1;
         this->targetScale = ((this->swordType == 1) ? 2 : 4);
         EnMThunder_SetupAction(this, EnMThunder_SpinAttacking);
@@ -196,11 +197,11 @@ void EnMThunder_ChargingSpinAttack(EnMThunder* this, PlayState* play) {
                 gSaveContext.magicState = MAGIC_STATE_CONSUME_SETUP;
             }
             if (player->unk_858 < 0.85f) {
-                this->collider.info.toucher.dmgFlags = sSpinAttackDmgFlags[this->swordType];
+                this->collider.info.toucher.dmgFlags = Katana_GetSpinDmgFlags(sSpinAttackDmgFlags[this->swordType]);
                 this->attackStrength = 1;
                 this->targetScale = ((this->swordType == 1) ? 2 : 4);
             } else {
-                this->collider.info.toucher.dmgFlags = sJumpAttackDmgFlags[this->swordType];
+                this->collider.info.toucher.dmgFlags = Katana_GetGreatSpinDmgFlags(sJumpAttackDmgFlags[this->swordType]);
                 this->attackStrength = 0;
                 this->targetScale = ((this->swordType == 1) ? 4 : 8);
             }
@@ -418,15 +419,41 @@ void EnMThunder_Draw(Actor* thisx, PlayState* play2) {
         }
         phi_t1 = 0x14;
     }
-    Matrix_Scale(1.0f, phi_f14, phi_f14, MTXMODE_APPLY);
-    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-
     gSPSegment(POLY_XLU_DISP++, 0x09,
                Gfx_TwoTexScrollEx(play->state.gfxCtx, 0, (play->gameplayFrames * 5) & 0xFF, 0, 0x20, 0x20, 1,
                                   (play->gameplayFrames * 20) & 0xFF, (play->gameplayFrames * phi_t1) & 0xFF, 8, 8, 5,
                                   0, 20, phi_t1));
 
-    gSPDisplayList(POLY_XLU_DISP++, gSpinAttackChargingDL);
+    // Heretics Tomb: charging the katana's Iai, the glow lies along its scabbard (the blade is still in it), drawn
+    // in pieces so it follows the scabbard's curve (katana model space: the guard at x 790, the end at 6160, the
+    // centre line falling 420 * f^2 toward -y over the blade, f = 0..1 from the guard to x 5600)
+    if (Katana_IsEquipped() && (Player_KatanaSayaMtx() != NULL)) {
+        static const f32 sGlowLen = 3725.0f; // the charging glow model runs from x 411 to -3725
+        MtxF saya = *(MtxF*)Player_KatanaSayaMtx();
+        s32 i;
+
+        for (i = 0; i < 4; i++) {
+            f32 x0 = 790.0f + (6160.0f - 790.0f) * i / 4.0f;
+            f32 x1 = 790.0f + (6160.0f - 790.0f) * (i + 1) / 4.0f;
+            f32 f0 = CLAMP((x0 - 790.0f) / (5600.0f - 790.0f), 0.0f, 1.0f);
+            f32 f1 = CLAMP((x1 - 790.0f) / (5600.0f - 790.0f), 0.0f, 1.0f);
+            f32 y0 = -420.0f * f0 * f0, y1 = -420.0f * f1 * f1;
+            f32 len = sqrtf(SQ(x1 - x0) + SQ(y1 - y0));
+
+            Matrix_Put(&saya);
+            Matrix_Translate(x0, y0, 0.0f, MTXMODE_APPLY);
+            Matrix_RotateZ(Math_FAtan2F(y1 - y0, x1 - x0), MTXMODE_APPLY);
+            Matrix_Scale(-(len / sGlowLen) * 1.1f, -0.8f, -0.6f, MTXMODE_APPLY);
+            Matrix_RotateX(16384.0f, MTXMODE_APPLY);
+            Matrix_Scale(1.0f, phi_f14, phi_f14, MTXMODE_APPLY);
+            gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+            gSPDisplayList(POLY_XLU_DISP++, gSpinAttackChargingDL);
+        }
+    } else {
+        Matrix_Scale(1.0f, phi_f14, phi_f14, MTXMODE_APPLY);
+        gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        gSPDisplayList(POLY_XLU_DISP++, gSpinAttackChargingDL);
+    }
 
     CLOSE_DISPS(play->state.gfxCtx);
 }

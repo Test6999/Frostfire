@@ -9,6 +9,7 @@
 #include "objects/object_bw/object_bw.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/Enhancements/savestate_serialize.h"
+#include "soh/Enhancements/HereticsTomb/HtChainBarrier.h"
 
 #define FLAGS (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED)
 
@@ -804,7 +805,10 @@ void EnBw_Update(Actor* thisx, PlayState* play2) {
     }
     Collider_UpdateCylinder(thisx, &this->collider2);
     CollisionCheck_SetOC(play, &play->colChkCtx, &this->collider2.base);
-    if ((this->unk_220 != 0) && ((thisx->colorFilterTimer == 0) || !(thisx->colorFilterParams & 0x4000))) {
+    // Heretics Tomb: a slug penned behind uncut war chains can't be hit from outside the pen (spin attacks,
+    // bombs and arrows would reach through the links)
+    if ((this->unk_220 != 0) && ((thisx->colorFilterTimer == 0) || !(thisx->colorFilterParams & 0x4000)) &&
+        !HtChainBarrier_Separates(&GET_PLAYER(play)->actor.world.pos, &thisx->world.pos)) {
         CollisionCheck_SetAC(play, &play->colChkCtx, &this->collider2.base);
     }
     if ((this->unk_221 != 1) && (this->unk_220 < 5) && (this->unk_248 > 0.4f)) {
@@ -913,4 +917,45 @@ void EnBw_Draw(Actor* thisx, PlayState* play2) {
 
 void EnBw_Reset(void) {
     sSlugGroup = 0;
+}
+// Heretics Tomb: the Ice Katana's cold makes a Torch Slug recoil with its flame out, frozen over (the vanilla
+// ice-arrow reaction, without the damage). While it's frozen like that, one katana blade hit kills it.
+// The blade hits as a Kokiri Sword, which a Torch Slug normally ignores: a blade hit reaches here before the slug
+// handles it, so it's handled here instead (1 damage, then the icy recoil).
+static void EnBw_HtKill(EnBw* this, PlayState* play) {
+    // the same death as vanilla's finishing blow
+    this->actor.colChkInfo.health = 0;
+    this->iceTimer = 0;
+    Actor_SetColorFilter(&this->actor, 0x4000, 0xFF, 0, 8);
+    this->unk_230 = 1;
+    Enemy_StartFinishingBlow(play, &this->actor);
+    Item_DropCollectibleRandom(play, &this->actor, &this->actor.world.pos, 0x90);
+    func_809D00F4(this);
+}
+
+void EnBw_HtChill(Actor* thisx, PlayState* play, s32 fromBlade) {
+    EnBw* this = (EnBw*)thisx;
+
+    if ((this->unk_220 == 0) || (this->unk_220 == 6)) {
+        return; // dying / not hittable
+    }
+    if (fromBlade) {
+        if (!(this->collider2.base.acFlags & AC_HIT)) {
+            return;
+        }
+        this->collider2.base.acFlags &= ~AC_HIT;
+        // frozen = recoiling from ice (the ice crystals themselves fade out before the recoil ends)
+        if (((this->unk_220 == 1) && (this->damageEffect == 0xE)) || (this->actor.colChkInfo.health <= 1)) {
+            EnBw_HtKill(this, play); // frozen (or last hit point): one blow kills it
+            return;
+        }
+        this->actor.colChkInfo.health--;
+    }
+    if ((this->unk_220 != 1) && (this->unk_220 != 5)) {
+        this->damageEffect = 0xE; // ice
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_BUBLEWALK_DAMAGE);
+        Actor_SetColorFilter(&this->actor, 0, 0xFF, 0, 0x50);
+        func_809D01CC(this);
+        this->unk_248 = 0.0f;
+    }
 }

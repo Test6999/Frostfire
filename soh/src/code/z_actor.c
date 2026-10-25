@@ -1061,6 +1061,10 @@ void TitleCard_InitPlaceName(PlayState* play, TitleCardContext* titleCtx, void* 
         case SCENE_LON_LON_RANCH:
             texture = gLonLonRanchTitleCardENGTex;
             break;
+        case SCENE_HERETICS_TOMB:
+            // Frostfire Mausoleum (built with the dungeon; its other-language names are the same card)
+            texture = "__OTR__textures/heretics_tomb/gHtTitleCardENGTex";
+            break;
         default:
             titleCtx->texture = NULL;
             return;
@@ -3216,7 +3220,9 @@ void func_80031B14(PlayState* play, ActorContext* actorCtx) {
 
     CollisionCheck_ClearContext(play, &play->colChkCtx);
     actorCtx->flags.tempClear = 0;
-    actorCtx->flags.tempSwch &= 0xFFFFFF;
+    if (play->sceneNum != SCENE_HERETICS_TOMB) { // (Frostfire Mausoleum: its flags 0x38-0x3F - the boss door, the
+        actorCtx->flags.tempSwch &= 0xFFFFFF;    //  Lynel's - are the dungeon's, not the room's)
+    }
     play->msgCtx.unk_E3F4 = 0;
 }
 

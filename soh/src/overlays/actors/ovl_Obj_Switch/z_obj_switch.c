@@ -250,7 +250,10 @@ void ObjSwitch_SetOn(ObjSwitch* this, PlayState* play) {
         subType = (this->dyna.actor.params >> 4 & 7);
         Flags_SetSwitch(play, (this->dyna.actor.params >> 8 & 0x3F));
 
-        if (GameInteractor_Should(VB_PLAY_ONEPOINT_ACTOR_CS, true, this)) {
+        // Heretics Tomb: params bit 14 = a quiet switch (the torch rooms' resets: no jingle, no camera)
+        if ((play->sceneNum == SCENE_HERETICS_TOMB) && (this->dyna.actor.params & 0x4000)) {
+            this->cooldownOn = false;
+        } else if (GameInteractor_Should(VB_PLAY_ONEPOINT_ACTOR_CS, true, this)) {
             if (subType == 0 || subType == 4) {
                 OnePointCutscene_AttentionSetSfx(play, &this->dyna.actor, NA_SE_SY_CORRECT_CHIME);
             } else {

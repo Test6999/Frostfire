@@ -964,3 +964,44 @@ s32 EnDodongo_AteBomb(EnDodongo* this, PlayState* play) {
     }
     return false;
 }
+
+// Heretics Tomb: the Ice Katana's cold freezes a Dodongo in place (vanilla ice look), which cuts off a fire breath
+// or the wind-up to one. A frozen Dodongo shatters at one katana blade hit.
+// The slash wave reaches here after the Dodongo already reacted to the hit (as a plain stun), so an existing stun is
+// turned into an icy one. A blade hit reaches here before the Dodongo handles it: the blade's damage is applied now
+// and the hit consumed, so its usual reaction (a tail sweep) doesn't break the freeze.
+void EnDodongo_HtChill(Actor* thisx, PlayState* play, s32 fromBlade) {
+    EnDodongo* this = (EnDodongo*)thisx;
+    s32 bodyHit = this->colliderBody.base.acFlags & AC_HIT;
+    s32 hardHit = this->colliderHard.base.acFlags & AC_BOUNCED;
+
+    if ((this->actionState <= DODONGO_DEATH) || (this->actor.colChkInfo.health == 0)) {
+        return;
+    }
+    if (fromBlade && (bodyHit || hardHit)) {
+        this->colliderBody.base.acFlags &= ~AC_HIT;
+        this->colliderHard.base.acFlags &= ~AC_BOUNCED;
+        // frozen = stunned by ice (the ice crystals themselves fade out before the stun ends)
+        if ((this->actionState == DODONGO_STUNNED) && (this->damageEffect == 0xF)) {
+            // frozen: one blow shatters it
+            this->actor.colChkInfo.health = 0;
+            this->iceTimer = 0;
+            Enemy_StartFinishingBlow(play, &this->actor);
+            EnDodongo_SetupDeath(this, play);
+            return;
+        }
+        if (bodyHit && (Actor_ApplyDamage(&this->actor) == 0)) {
+            // that blow kills it: let it die normally
+            this->colliderBody.base.acFlags |= AC_HIT;
+            return;
+        }
+    }
+    this->damageEffect = 0xF; // ice
+    Actor_SetColorFilter(&this->actor, 0, 0x78, 0, 0x50);
+    if (this->actionState != DODONGO_STUNNED) {
+        EnDodongo_SetupStunned(this); // sets the ice timer for damageEffect 0xF
+    } else if (this->iceTimer == 0) {
+        this->iceTimer = 36;
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_GOMA_JR_FREEZE);
+    }
+}

@@ -98,6 +98,9 @@ void ArmsHook_Wait(ArmsHook* this, PlayState* play) {
     }
 }
 
+// Heretics Tomb: the hook stuck in a ceiling (a downward-facing hookshot surface)
+static s32 sHookCeiling = false;
+
 void ArmsHook_PullPlayer(ArmsHook* this) {
     this->actor.child = this->actor.parent;
     this->actor.parent->parent = &this->actor;
@@ -251,6 +254,11 @@ void ArmsHook_Shoot(ArmsHook* this, PlayState* play) {
                 if (ArmsHook_AttachToPlayer(this, player)) {
                     Math_Vec3f_Diff(&this->actor.world.pos, &player->actor.world.pos, &player->actor.velocity);
                     player->actor.velocity.y -= 20.0f;
+                    if (sHookCeiling && (player->actor.velocity.y > 0.0f)) {
+                        // Heretics Tomb: off a ceiling target Link drops, rather than being thrown up through it
+                        // (vanilla lifts his feet to the hook - how a wall hook puts him up on its ledge)
+                        player->actor.velocity.y = 0.0f;
+                    }
                 }
             }
         }
@@ -272,6 +280,7 @@ void ArmsHook_Shoot(ArmsHook* this, PlayState* play) {
             sp5C = COLPOLY_GET_NORMAL(poly->normal.x);
             sp58 = COLPOLY_GET_NORMAL(poly->normal.z);
             Math_Vec3f_Copy(&this->actor.world.pos, &sp78);
+            sHookCeiling = (play->sceneNum == SCENE_HERETICS_TOMB) && (COLPOLY_GET_NORMAL(poly->normal.y) < -0.5f);
             this->actor.world.pos.x += 10.0f * sp5C;
             this->actor.world.pos.z += 10.0f * sp58;
             this->timer = 0;

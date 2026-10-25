@@ -5,6 +5,45 @@
 #include "soh/Enhancements/enhancementTypes.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include <libultraship/bridge/consolevariablebridge.h>
+#include "soh/Enhancements/HereticsTomb/Katana.h"
+
+// Heretics Tomb: the katana occupies a virtual 5th cell on the sword row,
+// one column right of the Biggoron Sword cell (equipVtx slot 3). When the katana is
+// owned, KaleidoScope_InitVertices compacts the sword row so all 4 swords fit.
+static bool sKatanaCursor = false;
+
+bool KaleidoScope_IsKatanaCursorActive(void) {
+    return sKatanaCursor;
+}
+
+static bool KaleidoScope_KatanaSwordToRight(s16 cursorX) {
+    for (s16 x = cursorX + 1; x <= 3; x++) {
+        if (gBitFlags[x - 1] & gSaveContext.inventory.equipment) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Returns 8 vertices: [0..3] the katana icon quad, [4..7] its equipped-outline quad.
+static Vtx* KaleidoScope_BuildKatanaVtx(PlayState* play) {
+    PauseContext* pauseCtx = &play->pauseCtx;
+    Vtx* vtx = Graph_Alloc(play->state.gfxCtx, 8 * sizeof(Vtx));
+    s16 pitch = pauseCtx->equipVtx[3 * 4].v.ob[0] - pauseCtx->equipVtx[2 * 4].v.ob[0];
+
+    for (s32 n = 0; n < 4; n++) {
+        vtx[n] = pauseCtx->equipVtx[3 * 4 + n];
+        vtx[n].v.ob[0] += pitch;
+    }
+    for (s32 n = 0; n < 4; n++) {
+        vtx[4 + n] = vtx[n];
+        vtx[4 + n].v.ob[0] = (n & 1) ? vtx[1].v.ob[0] + 2 : vtx[0].v.ob[0] - 2;
+        vtx[4 + n].v.ob[1] = (n & 2) ? vtx[2].v.ob[1] - 2 : vtx[0].v.ob[1] + 2;
+        vtx[4 + n].v.tc[0] = (n & 1) ? 0x400 : 0;
+        vtx[4 + n].v.tc[1] = (n & 2) ? 0x400 : 0;
+    }
+    return vtx;
+}
 
 static u8 sChildUpgrades[] = { UPG_BULLET_BAG, UPG_BOMB_BAG, UPG_STRENGTH, UPG_SCALE };
 static u8 sAdultUpgrades[] = { UPG_QUIVER, UPG_BOMB_BAG, UPG_STRENGTH, UPG_SCALE };
@@ -188,12 +227,20 @@ void KaleidoScope_DrawEquipment(PlayState* play) {
 
     OPEN_DISPS(play->state.gfxCtx);
 
+    Vtx* katanaVtx = KaleidoScope_BuildKatanaVtx(play);
+
     gDPPipeSync(POLY_OPA_DISP++);
     gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, ZREG(39), ZREG(40), ZREG(41), pauseCtx->alpha);
     gDPSetEnvColor(POLY_OPA_DISP++, ZREG(43), ZREG(44), ZREG(45), 0);
 
+    if (Katana_IsEquipped()) {
+        gDPPipeSync(POLY_OPA_DISP++);
+        gSPVertex(POLY_OPA_DISP++, &katanaVtx[4], 4, 0);
+        POLY_OPA_DISP = KaleidoScope_QuadTextureIA8(POLY_OPA_DISP, gEquippedItemOutlineTex, 32, 32, 0);
+    }
+
     for (i = 0, j = 64; i < 4; i++, j += 4) {
-        if (CUR_EQUIP_VALUE(i) != 0) {
+        if ((CUR_EQUIP_VALUE(i) != 0) && !((i == 0) && Katana_IsEquipped())) {
             gDPPipeSync(POLY_OPA_DISP++);
             gSPVertex(POLY_OPA_DISP++, &pauseCtx->equipVtx[j], 4, 0);
 
@@ -209,6 +256,44 @@ void KaleidoScope_DrawEquipment(PlayState* play) {
 
         oldCursorPoint = pauseCtx->cursorPoint[PAUSE_EQUIP];
         pauseCtx->cursorColorSet = 0;
+
+        // Heretics Tomb: katana cell navigation. Runs before vanilla navigation and
+        // consumes the input whenever it acts, so the vanilla 4x4 grid logic is untouched.
+        if ((pauseCtx->cursorSpecialPos != 0) || !Katana_IsOwned()) {
+            sKatanaCursor = false;
+        } else {
+            bool pressLeft = (pauseCtx->stickRelX < -30) || (dpad && CHECK_BTN_ALL(input->press.button, BTN_DLEFT));
+            bool pressRight = (pauseCtx->stickRelX > 30) || (dpad && CHECK_BTN_ALL(input->press.button, BTN_DRIGHT));
+            bool pressVert = (pauseCtx->stickRelY > 30) || (pauseCtx->stickRelY < -30) ||
+                             (dpad && (CHECK_BTN_ALL(input->press.button, BTN_DUP) ||
+                                       CHECK_BTN_ALL(input->press.button, BTN_DDOWN)));
+            bool consume = false;
+
+            if (sKatanaCursor) {
+                if (pressLeft) {
+                    sKatanaCursor = false;
+                    Audio_PlaySfxGeneral(NA_SE_SY_CURSOR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                           &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+                } else if (pressRight) {
+                    sKatanaCursor = false;
+                    KaleidoScope_MoveCursorToSpecialPos(play, PAUSE_CURSOR_PAGE_RIGHT);
+                }
+                consume = pressLeft || pressRight || pressVert;
+            } else if (pressRight && (pauseCtx->cursorY[PAUSE_EQUIP] == 0) &&
+                       (pauseCtx->cursorX[PAUSE_EQUIP] >= 1) &&
+                       !KaleidoScope_KatanaSwordToRight(pauseCtx->cursorX[PAUSE_EQUIP])) {
+                sKatanaCursor = true;
+                Audio_PlaySfxGeneral(NA_SE_SY_CURSOR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                       &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+                consume = true;
+            }
+
+            if (consume) {
+                pauseCtx->stickRelX = 0;
+                pauseCtx->stickRelY = 0;
+                input->press.button &= ~(BTN_DLEFT | BTN_DRIGHT | BTN_DUP | BTN_DDOWN);
+            }
+        }
 
         if (pauseCtx->cursorSpecialPos == 0) {
             pauseCtx->nameColorSet = 0;
@@ -521,6 +606,33 @@ void KaleidoScope_DrawEquipment(PlayState* play) {
 
         KaleidoScope_SetCursorVtx(pauseCtx, cursorSlot * 4, pauseCtx->equipVtx);
 
+        if (sKatanaCursor) {
+            KaleidoScope_SetCursorVtx(pauseCtx, 0, katanaVtx);
+            cursorItem = PAUSE_ITEM_NONE; // no vanilla equip handling for this cell
+            // Any real item id keeps the name panel visible; KaleidoScope_UpdateNamePanel swaps in the katana name.
+            pauseCtx->cursorItem[PAUSE_EQUIP] = ITEM_SWORD_MASTER;
+            pauseCtx->nameColorSet = 0;
+
+            if ((pauseCtx->cursorSpecialPos == 0) && (pauseCtx->state == 6) && (pauseCtx->unk_1E4 == 0) &&
+                CHECK_BTN_ALL(input->press.button, BTN_A)) {
+                if (LINK_IS_ADULT && !Katana_IsLocked()) { // (locked: the Lynel's last round)
+                    // The katana rides on the Master Sword equip value (see Katana.h)
+                    Inventory_ChangeEquipment(EQUIP_TYPE_SWORD, EQUIP_VALUE_SWORD_MASTER);
+                    gSaveContext.equips.buttonItems[0] = ITEM_SWORD_MASTER;
+                    Flags_UnsetInfTable(INFTABLE_SWORDLESS);
+                    Katana_SetEquipped(true);
+                    Interface_LoadItemIcon1(play, 0);
+                    Audio_PlaySfxGeneral(NA_SE_SY_DECIDE, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                           &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+                    pauseCtx->unk_1E4 = 7;
+                    sEquipTimer = 10;
+                } else {
+                    Audio_PlaySfxGeneral(NA_SE_SY_ERROR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                           &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+                }
+            }
+        }
+
         // Allow Toggling of Strength when Pressing A on Strength Upgrade Slot
         if ((pauseCtx->cursorSpecialPos == 0) && (pauseCtx->state == 6) && (pauseCtx->unk_1E4 == 0) &&
             CHECK_BTN_ALL(input->press.button, BTN_A) && (pauseCtx->cursorX[PAUSE_EQUIP] == 0) &&
@@ -563,8 +675,11 @@ void KaleidoScope_DrawEquipment(PlayState* play) {
                                 LINK_IS_CHILD) {
                             // If we're on the "swords" section of the equipment screen AND we're on a
                             // currently-equipped sword
+                            // Heretics Tomb: the katana shares the Master Sword's equip value, so when the
+                            // katana is equipped, A on the Master Sword cell switches swords instead of unequipping.
                             if (pauseCtx->cursorY[PAUSE_EQUIP] == 0 &&
-                                pauseCtx->cursorX[PAUSE_EQUIP] == CUR_EQUIP_VALUE(EQUIP_TYPE_SWORD)) {
+                                pauseCtx->cursorX[PAUSE_EQUIP] == CUR_EQUIP_VALUE(EQUIP_TYPE_SWORD) &&
+                                !Katana_IsEquipped()) {
                                 Inventory_ChangeEquipment(EQUIP_TYPE_SWORD, EQUIP_VALUE_SWORD_NONE);
                                 gSaveContext.equips.buttonItems[0] = ITEM_NONE;
                                 Flags_SetInfTable(INFTABLE_SWORDLESS);
@@ -636,6 +751,7 @@ void KaleidoScope_DrawEquipment(PlayState* play) {
                             }
                         }
                     RESUME_EQUIPMENT_SWORD:
+                        Katana_SetEquipped(false);
                         Interface_LoadItemIcon1(play, 0);
                     }
 
@@ -836,6 +952,19 @@ void KaleidoScope_DrawEquipment(PlayState* play) {
             }
             gSPGrayscale(POLY_OPA_DISP++, false);
         }
+    }
+
+    // Heretics Tomb: katana icon in its cell
+    if (Katana_IsOwned()) {
+        gDPPipeSync(POLY_OPA_DISP++);
+        gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 255, pauseCtx->alpha);
+        gSPVertex(POLY_OPA_DISP++, katanaVtx, 4, 0);
+        if (LINK_IS_CHILD && !CVarGetInteger(CVAR_CHEAT("TimelessEquipment"), 0)) {
+            gDPSetGrayscaleColor(POLY_OPA_DISP++, 109, 109, 109, 255);
+            gSPGrayscale(POLY_OPA_DISP++, true);
+        }
+        KaleidoScope_DrawQuadTextureRGBA32(play->state.gfxCtx, (void*)KATANA_ICON_TEX_PATH, 32, 32, 0);
+        gSPGrayscale(POLY_OPA_DISP++, false);
     }
 
     // Render A button indicator when hovered over strength

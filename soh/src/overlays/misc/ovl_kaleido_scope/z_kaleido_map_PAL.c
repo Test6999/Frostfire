@@ -9,6 +9,245 @@
 #include "textures/icon_item_nes_static/icon_item_nes_static.h"
 
 #include <libultraship/bridge/gfxbridge.h>
+#include "soh/Enhancements/HereticsTomb/HtMap.h"
+
+// Heretics Tomb: the dungeon map page, as the vanilla one (its input, its title, items and floor buttons, Link's
+// head and the compass's skull) but the map itself drawn from the tomb's own shapes (HtMap.c)
+static void KaleidoScope_DrawHereticsMap(PlayState* play, GraphicsContext* gfxCtx) {
+    static void* dungeonItemTexs[] = {
+        gQuestIconDungeonBossKeyTex,
+        gQuestIconDungeonCompassTex,
+        gQuestIconDungeonMapTex,
+    };
+    static void* floorIconTexs[] = {
+        gDungeonMapBlankFloorButtonTex, gDungeonMap8FButtonTex, gDungeonMap7FButtonTex, gDungeonMap6FButtonTex,
+        gDungeonMap5FButtonTex,         gDungeonMap4FButtonTex, gDungeonMap3FButtonTex, gDungeonMap2FButtonTex,
+        gDungeonMap1FButtonTex,         gDungeonMapB1ButtonTex, gDungeonMapB2ButtonTex, gDungeonMapB3ButtonTex,
+        gDungeonMapB4ButtonTex,         gDungeonMapB5ButtonTex, gDungeonMapB6ButtonTex, gDungeonMapB7ButtonTex,
+        gDungeonMapB8ButtonTex,
+    };
+    static const s16 floorIcon[] = { 8, 9, 10, 11 }; // 1F, B1, B2, B3
+    PauseContext* pauseCtx = &play->pauseCtx;
+    Input* input = &play->state.input[0];
+    s16 slot0 = HT_MAP_FLOOR_SLOT0 + 3;          // (cursor points: 0..2 the items, 3.. the floor slots)
+    s16 slotN = slot0 + HtMap_FloorCount() - 1;
+    s16 i;
+    s16 j;
+    s16 oldCursorPoint;
+
+    OPEN_DISPS(gfxCtx);
+
+    if ((pauseCtx->dungeonMapSlot < slot0) || (pauseCtx->dungeonMapSlot > slotN)) {
+        pauseCtx->dungeonMapSlot = slot0;
+    }
+
+    if ((pauseCtx->state == 6) && (pauseCtx->unk_1E4 == 0) && (pauseCtx->pageIndex == PAUSE_MAP)) {
+        bool dpad = CVarGetInteger(CVAR_SETTING("DPadOnPause"), 0);
+        pauseCtx->cursorColorSet = 0;
+        oldCursorPoint = pauseCtx->cursorPoint[PAUSE_MAP];
+
+        if (pauseCtx->cursorSpecialPos == 0) {
+            if ((pauseCtx->stickRelX > 30) || (dpad && CHECK_BTN_ALL(input->press.button, BTN_DRIGHT))) {
+                if (pauseCtx->cursorX[PAUSE_MAP] != 0) {
+                    KaleidoScope_MoveCursorToSpecialPos(play, PAUSE_CURSOR_PAGE_RIGHT);
+                } else {
+                    pauseCtx->cursorX[PAUSE_MAP] = 1;
+                    pauseCtx->cursorPoint[PAUSE_MAP] = 0;
+                    if (!CHECK_DUNGEON_ITEM(DUNGEON_KEY_BOSS, gSaveContext.mapIndex)) {
+                        pauseCtx->cursorPoint[PAUSE_MAP]++;
+                        if (!CHECK_DUNGEON_ITEM(DUNGEON_COMPASS, gSaveContext.mapIndex)) {
+                            pauseCtx->cursorPoint[PAUSE_MAP]++;
+                            if (!CHECK_DUNGEON_ITEM(DUNGEON_MAP, gSaveContext.mapIndex)) {
+                                KaleidoScope_MoveCursorToSpecialPos(play, PAUSE_CURSOR_PAGE_RIGHT);
+                            }
+                        }
+                    }
+                }
+            } else if ((pauseCtx->stickRelX < -30) || (dpad && CHECK_BTN_ALL(input->press.button, BTN_DLEFT))) {
+                if (pauseCtx->cursorX[PAUSE_MAP] == 0) {
+                    KaleidoScope_MoveCursorToSpecialPos(play, PAUSE_CURSOR_PAGE_LEFT);
+                } else {
+                    pauseCtx->cursorX[PAUSE_MAP] = 0;
+                    pauseCtx->cursorPoint[PAUSE_MAP] = pauseCtx->dungeonMapSlot;
+                }
+            }
+
+            if (pauseCtx->cursorPoint[PAUSE_MAP] < 3) {
+                if ((pauseCtx->stickRelY > 30) || (dpad && CHECK_BTN_ALL(input->press.button, BTN_DUP))) {
+                    for (i = pauseCtx->cursorPoint[PAUSE_MAP] - 1; i >= 0; i--) {
+                        if (CHECK_DUNGEON_ITEM(i, gSaveContext.mapIndex)) {
+                            pauseCtx->cursorPoint[PAUSE_MAP] = i;
+                            break;
+                        }
+                    }
+                } else if ((pauseCtx->stickRelY < -30) || (dpad && CHECK_BTN_ALL(input->press.button, BTN_DDOWN))) {
+                    for (i = pauseCtx->cursorPoint[PAUSE_MAP] + 1; i < 3; i++) {
+                        if (CHECK_DUNGEON_ITEM(i, gSaveContext.mapIndex)) {
+                            pauseCtx->cursorPoint[PAUSE_MAP] = i;
+                            break;
+                        }
+                    }
+                }
+            } else {
+                if ((pauseCtx->stickRelY > 30) || (dpad && CHECK_BTN_ALL(input->press.button, BTN_DUP))) {
+                    for (i = pauseCtx->cursorPoint[PAUSE_MAP] - 1; i >= slot0; i--) {
+                        if (HtMap_FloorShown(i - slot0)) {
+                            pauseCtx->cursorPoint[PAUSE_MAP] = i;
+                            break;
+                        }
+                    }
+                } else if ((pauseCtx->stickRelY < -30) || (dpad && CHECK_BTN_ALL(input->press.button, BTN_DDOWN))) {
+                    for (i = pauseCtx->cursorPoint[PAUSE_MAP] + 1; i <= slotN; i++) {
+                        if (HtMap_FloorShown(i - slot0)) {
+                            pauseCtx->cursorPoint[PAUSE_MAP] = i;
+                            break;
+                        }
+                    }
+                }
+                pauseCtx->dungeonMapSlot = pauseCtx->cursorPoint[PAUSE_MAP];
+            }
+        } else if (pauseCtx->cursorSpecialPos == PAUSE_CURSOR_PAGE_LEFT) {
+            if ((pauseCtx->stickRelX > 30) || (dpad && CHECK_BTN_ALL(input->press.button, BTN_DRIGHT))) {
+                pauseCtx->nameDisplayTimer = 0;
+                pauseCtx->cursorSpecialPos = 0;
+                pauseCtx->cursorSlot[PAUSE_MAP] = pauseCtx->cursorPoint[PAUSE_MAP] = pauseCtx->dungeonMapSlot;
+                pauseCtx->cursorX[PAUSE_MAP] = 0;
+                j = 72 + (pauseCtx->cursorSlot[PAUSE_MAP] * 4);
+                KaleidoScope_SetCursorVtx(pauseCtx, j, pauseCtx->mapPageVtx);
+                Audio_PlaySfxGeneral(NA_SE_SY_CURSOR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                     &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+            }
+        } else {
+            if ((pauseCtx->stickRelX < -30) || (dpad && CHECK_BTN_ALL(input->press.button, BTN_DLEFT))) {
+                pauseCtx->nameDisplayTimer = 0;
+                pauseCtx->cursorSpecialPos = 0;
+                pauseCtx->cursorX[PAUSE_MAP] = 1;
+                pauseCtx->cursorPoint[PAUSE_MAP] = 0;
+                if (!CHECK_DUNGEON_ITEM(DUNGEON_KEY_BOSS, gSaveContext.mapIndex)) {
+                    pauseCtx->cursorPoint[PAUSE_MAP]++;
+                    if (!CHECK_DUNGEON_ITEM(DUNGEON_COMPASS, gSaveContext.mapIndex)) {
+                        pauseCtx->cursorPoint[PAUSE_MAP]++;
+                        if (!CHECK_DUNGEON_ITEM(DUNGEON_MAP, gSaveContext.mapIndex)) {
+                            pauseCtx->cursorX[PAUSE_MAP] = 0;
+                            pauseCtx->cursorSlot[PAUSE_MAP] = pauseCtx->cursorPoint[PAUSE_MAP] =
+                                pauseCtx->dungeonMapSlot;
+                        }
+                    }
+                } else {
+                    pauseCtx->cursorSlot[PAUSE_MAP] = pauseCtx->cursorPoint[PAUSE_MAP];
+                }
+
+                j = 72 + (pauseCtx->cursorSlot[PAUSE_MAP] * 4);
+                KaleidoScope_SetCursorVtx(pauseCtx, j, pauseCtx->mapPageVtx);
+                Audio_PlaySfxGeneral(NA_SE_SY_CURSOR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                     &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+            }
+        }
+
+        if (oldCursorPoint != pauseCtx->cursorPoint[PAUSE_MAP]) {
+            Audio_PlaySfxGeneral(NA_SE_SY_CURSOR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                 &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        }
+    }
+
+    if (pauseCtx->cursorSpecialPos == 0) {
+        if (pauseCtx->cursorPoint[PAUSE_MAP] < 3) {
+            pauseCtx->cursorItem[PAUSE_MAP] = ITEM_KEY_BOSS + pauseCtx->cursorPoint[PAUSE_MAP];
+        } else {
+            pauseCtx->cursorItem[PAUSE_MAP] = PAUSE_ITEM_NONE;
+        }
+
+        pauseCtx->cursorSlot[PAUSE_MAP] = pauseCtx->cursorPoint[PAUSE_MAP];
+
+        j = 72 + (pauseCtx->cursorSlot[PAUSE_MAP] * 4);
+        KaleidoScope_SetCursorVtx(pauseCtx, j, pauseCtx->mapPageVtx);
+
+        if (pauseCtx->cursorX[PAUSE_MAP] == 0) {
+            pauseCtx->mapPageVtx[j + 0].v.ob[0] = pauseCtx->mapPageVtx[j + 2].v.ob[0] =
+                pauseCtx->mapPageVtx[j + 0].v.ob[0] - 2;
+            pauseCtx->mapPageVtx[j + 1].v.ob[0] = pauseCtx->mapPageVtx[j + 3].v.ob[0] =
+                pauseCtx->mapPageVtx[j + 1].v.ob[0] + 4;
+            pauseCtx->mapPageVtx[j + 0].v.ob[1] = pauseCtx->mapPageVtx[j + 1].v.ob[1] =
+                pauseCtx->mapPageVtx[j + 0].v.ob[1] + 2;
+            pauseCtx->mapPageVtx[j + 2].v.ob[1] = pauseCtx->mapPageVtx[j + 3].v.ob[1] =
+                pauseCtx->mapPageVtx[j + 2].v.ob[1] - 4;
+        }
+    }
+
+    // the title
+    gDPPipeSync(POLY_OPA_DISP++);
+    gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 255, pauseCtx->alpha);
+    gDPSetCombineMode(POLY_OPA_DISP++, G_CC_MODULATEIA, G_CC_MODULATEIA);
+    gSPVertex(POLY_OPA_DISP++, &pauseCtx->mapPageVtx[68], 16, 0);
+    gDPLoadTextureBlock(POLY_OPA_DISP++, "__OTR__textures/heretics_tomb/gHtMapTitleTex", G_IM_FMT_IA, G_IM_SIZ_8b, 96,
+                        16, 0, G_TX_WRAP | G_TX_NOMIRROR, G_TX_WRAP | G_TX_NOMIRROR, G_TX_NOMASK, G_TX_NOMASK,
+                        G_TX_NOLOD, G_TX_NOLOD);
+    gSP1Quadrangle(POLY_OPA_DISP++, 0, 2, 3, 1, 0);
+
+    // the boss key, compass, map
+    gDPPipeSync(POLY_OPA_DISP++);
+    gDPSetCombineMode(POLY_OPA_DISP++, G_CC_MODULATEIA_PRIM, G_CC_MODULATEIA_PRIM);
+    for (i = 0, j = 4; i < 3; i++, j += 4) {
+        if (CHECK_DUNGEON_ITEM(i, gSaveContext.mapIndex)) {
+            gDPLoadTextureBlock(POLY_OPA_DISP++, dungeonItemTexs[i], G_IM_FMT_RGBA, G_IM_SIZ_32b, 24, 24, 0,
+                                G_TX_WRAP | G_TX_NOMIRROR, G_TX_WRAP | G_TX_NOMIRROR, G_TX_NOMASK, G_TX_NOMASK,
+                                G_TX_NOLOD, G_TX_NOLOD);
+            gSP1Quadrangle(POLY_OPA_DISP++, j, j + 2, j + 3, j + 1, 0);
+        }
+    }
+
+    // the floors
+    gDPPipeSync(POLY_OPA_DISP++);
+    gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 200, pauseCtx->alpha);
+    gSPVertex(POLY_OPA_DISP++, &pauseCtx->mapPageVtx[84], 32, 0);
+    for (i = 0; i < HtMap_FloorCount(); i++) {
+        s16 slot = HT_MAP_FLOOR_SLOT0 + i;
+
+        if (!HtMap_FloorShown(i) || (slot + 3 == pauseCtx->dungeonMapSlot)) {
+            continue;
+        }
+        j = slot * 4;
+        gDPLoadTextureBlock(POLY_OPA_DISP++, floorIconTexs[floorIcon[i]], G_IM_FMT_IA, G_IM_SIZ_8b, 24, 16, 0,
+                            G_TX_WRAP | G_TX_NOMIRROR, G_TX_WRAP | G_TX_NOMIRROR, G_TX_NOMASK, G_TX_NOMASK,
+                            G_TX_NOLOD, G_TX_NOLOD);
+        gSP1Quadrangle(POLY_OPA_DISP++, j, j + 2, j + 3, j + 1, 0);
+    }
+    j = (pauseCtx->dungeonMapSlot - 3) * 4;
+    gDPPipeSync(POLY_OPA_DISP++);
+    gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 150, 150, 255, pauseCtx->alpha);
+    gDPLoadTextureBlock(POLY_OPA_DISP++, floorIconTexs[floorIcon[pauseCtx->dungeonMapSlot - slot0]], G_IM_FMT_IA,
+                        G_IM_SIZ_8b, 24, 16, 0, G_TX_WRAP | G_TX_NOMIRROR, G_TX_WRAP | G_TX_NOMIRROR, G_TX_NOMASK,
+                        G_TX_NOMASK, G_TX_NOLOD, G_TX_NOLOD);
+    gSP1Quadrangle(POLY_OPA_DISP++, j, j + 2, j + 3, j + 1, 0);
+
+    // Link's head by his floor; the skull by the boss's (the compass)
+    gSPVertex(POLY_OPA_DISP++, &pauseCtx->mapPageVtx[116], 12, 0);
+    gDPPipeSync(POLY_OPA_DISP++);
+    gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 255, pauseCtx->alpha);
+    pauseCtx->mapPageVtx[116].v.ob[1] = pauseCtx->mapPageVtx[117].v.ob[1] = pauseCtx->offsetY - (VREG(30) * 14) + 49;
+    pauseCtx->mapPageVtx[118].v.ob[1] = pauseCtx->mapPageVtx[119].v.ob[1] = pauseCtx->mapPageVtx[116].v.ob[1] - 16;
+    gDPLoadTextureBlock(POLY_OPA_DISP++, gDungeonMapLinkHeadTex, G_IM_FMT_RGBA, G_IM_SIZ_16b, 16, 16, 0,
+                        G_TX_WRAP | G_TX_NOMIRROR, G_TX_WRAP | G_TX_NOMIRROR, G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD,
+                        G_TX_NOLOD);
+    gSP1Quadrangle(POLY_OPA_DISP++, 0, 2, 3, 1, 0);
+    if (CHECK_DUNGEON_ITEM(DUNGEON_COMPASS, gSaveContext.mapIndex) && (HtMap_BossFloor() >= 0)) {
+        pauseCtx->mapPageVtx[120].v.ob[1] = pauseCtx->mapPageVtx[121].v.ob[1] =
+            pauseCtx->offsetY - ((HT_MAP_FLOOR_SLOT0 + HtMap_BossFloor()) * 14) + 49;
+        pauseCtx->mapPageVtx[122].v.ob[1] = pauseCtx->mapPageVtx[123].v.ob[1] = pauseCtx->mapPageVtx[120].v.ob[1] - 16;
+        gDPLoadTextureBlock(POLY_OPA_DISP++, gDungeonMapSkullTex, G_IM_FMT_RGBA, G_IM_SIZ_16b, 16, 16, 0,
+                            G_TX_WRAP | G_TX_NOMIRROR, G_TX_WRAP | G_TX_NOMIRROR, G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD,
+                            G_TX_NOLOD);
+        gSP1Quadrangle(POLY_OPA_DISP++, 4, 6, 7, 5, 0);
+    }
+
+    CLOSE_DISPS(gfxCtx);
+
+    // the map: the floor picked
+    if (HtMap_FloorShown(pauseCtx->dungeonMapSlot - slot0)) {
+        HtMap_DrawPauseFloor(play, gfxCtx, pauseCtx->dungeonMapSlot - slot0, pauseCtx->mapPageVtx[60].v.ob[0],
+                             pauseCtx->mapPageVtx[60].v.ob[1], pauseCtx->alpha);
+    }
+}
 
 void KaleidoScope_DrawDungeonMap(PlayState* play, GraphicsContext* gfxCtx) {
     static void* dungeonItemTexs[] = {
@@ -59,6 +298,11 @@ void KaleidoScope_DrawDungeonMap(PlayState* play, GraphicsContext* gfxCtx) {
     s16 stepG;
     s16 stepB;
     u16 rgba16;
+
+    if (play->sceneNum == SCENE_HERETICS_TOMB) {
+        KaleidoScope_DrawHereticsMap(play, gfxCtx);
+        return;
+    }
 
     OPEN_DISPS(gfxCtx);
 

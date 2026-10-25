@@ -133,6 +133,8 @@ const char* const sceneMappings[] = {
     "Castle Maze (Broken)",
     "SRD Room",
     "Chest Room",
+    // Custom dungeons
+    "Heretics Tomb",
 };
 
 const char* const countMappings[] = {

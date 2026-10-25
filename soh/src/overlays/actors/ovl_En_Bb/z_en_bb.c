@@ -1352,3 +1352,37 @@ void EnBb_Draw(Actor* thisx, PlayState* play) {
     }
     CLOSE_DISPS(play->state.gfxCtx);
 }
+
+// Heretics Tomb: the Ice Katana's cold puts a Red or Blue Bubble's flame out, exactly like a shield bash does.
+// The katana's blade hits as a Kokiri Sword, which a Red Bubble normally ignores (no damage). A blade hit reaches
+// here before the Bubble handles it, so it's turned into a real hit worth the katana's damage: the Bubble's own
+// code then knocks its flame out (or damages it if it's already down).
+// A Bubble that's down (flame out) dies at one blade hit.
+void EnBb_HtChill(Actor* thisx, PlayState* play, s32 fromBlade) {
+    EnBb* this = (EnBb*)thisx;
+
+    if (fromBlade) {
+        if (this->collider.base.acFlags & AC_HIT) {
+            if (this->actor.colChkInfo.damageEffect == 0xD) {
+                this->actor.colChkInfo.damageEffect = 0xE;
+                this->actor.colChkInfo.damage = 1;
+            }
+            if ((this->action == BB_DOWN) && (this->actor.params >= ENBB_RED) && (this->actor.params < ENBB_FLAME_TRAIL)) {
+                this->actor.colChkInfo.damageEffect = 0xE;
+                this->actor.colChkInfo.damage = this->actor.colChkInfo.health;
+                if (this->timer >= 190) {
+                    this->timer = 189; // past the brief "just dropped" invulnerability
+                }
+            }
+        }
+        return;
+    }
+
+    if ((this->actor.params >= ENBB_RED) && (this->actor.params < ENBB_FLAME_TRAIL) && (this->action != BB_DOWN) &&
+        (this->action != BB_DAMAGE) && (this->action != BB_KILL) && (this->actor.colChkInfo.health != 0)) {
+        if (this->actor.params == ENBB_RED) {
+            EnBb_KillFlameTrail(this);
+        }
+        EnBb_SetupDown(this);
+    }
+}

@@ -5,6 +5,8 @@
  */
 
 #include <libultraship/libultra.h>
+#include "soh/Enhancements/HereticsTomb/Katana.h"
+#include "soh/Enhancements/HereticsTomb/HtHorse.h"
 #include "global.h"
 
 #include "overlays/actors/ovl_Bg_Heavy_Block/z_bg_heavy_block.h"
@@ -37,6 +39,15 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <libultraship/bridge/consolevariablebridge.h>
+
+// Heretics Tomb: the katana rules (one-handed swings, magic cost, ice slash, Iai) apply to the katana only: with the
+// Megaton Hammer in his hands Link swings it as in vanilla, free and two-handed, with its own damage.
+static s32 Katana_On(Player* this) {
+    return Katana_IsEquipped() && (this->heldItemAction != PLAYER_IA_HAMMER);
+}
+static s32 Katana_HammerFree(Player* this, s32 katanaOk) {
+    return (this->heldItemAction == PLAYER_IA_HAMMER) || katanaOk;
+}
 
 // Some player animations are played at this reduced speed, for reasons yet unclear.
 // This is called "adjusted" for now.
@@ -2553,6 +2564,9 @@ void Player_ProcessItemButtons(Player* this, PlayState* play) {
             if ((item < ITEM_NONE_FE) && (Player_ItemToItemAction(item) == this->heldItemAction)) {
                 sHeldItemButtonIsHeldDown = true;
             }
+        } else if (Katana_On(this) && (i == 0) && (this->stateFlags1 & PLAYER_STATE1_SHIELDING)) {
+            // Heretics Tomb: B doesn't draw the katana out of a crouch (no crouch stab; and drawing it would put the
+            // shield away, then sheathing it would bring the shield back out)
         } else if (GameInteractor_Should(VB_CHANGE_HELD_ITEM_AND_USE_ITEM, true, item)) {
             this->heldItemButton = i;
             Player_UseItem(play, this, item);
@@ -4260,7 +4274,8 @@ void func_80837530(PlayState* play, Player* this, s32 arg2) {
     if (this->actor.category == ACTORCAT_PLAYER) {
         Actor_Spawn(&play->actorCtx, play, ACTOR_EN_M_THUNDER, this->bodyPartsPos[PLAYER_BODYPART_WAIST].x,
                     this->bodyPartsPos[PLAYER_BODYPART_WAIST].y, this->bodyPartsPos[PLAYER_BODYPART_WAIST].z, 0, 0, 0,
-                    Player_GetMeleeWeaponHeld(this) | arg2);
+                    // Heretics Tomb: the katana's Iai draw pays its own magic, so no vanilla Great Spin cost
+                    Player_GetMeleeWeaponHeld(this) | (Katana_On(this) ? 0 : arg2));
     }
 }
 
@@ -4312,15 +4327,19 @@ s32 Player_CanSpinAttack(Player* this) {
 
 void func_80837704(PlayState* play, Player* this) {
     LinkAnimationHeader* anim;
+    // Heretics Tomb: the katana charges in the one-handed crouch
+    s32 twoHanded = Katana_On(this) ? 0 : Player_HoldsTwoHandedWeapon(this);
 
     if ((this->meleeWeaponAnimation >= PLAYER_MWA_RIGHT_SLASH_1H) &&
         (this->meleeWeaponAnimation <= PLAYER_MWA_RIGHT_COMBO_2H)) {
-        anim = D_80854358[Player_HoldsTwoHandedWeapon(this)];
+        anim = D_80854358[twoHanded];
     } else {
-        anim = D_80854350[Player_HoldsTwoHandedWeapon(this)];
+        anim = D_80854350[twoHanded];
     }
 
     func_80832318(this);
+    // (Heretics Tomb: the katana's Iai charge uses this same crouch; the blade is drawn back along Link's right side,
+    // point far behind him, by the katana's own drawing code in z_player_lib.c)
     LinkAnimation_Change(play, &this->skelAnime, anim, 1.0f, 8.0f, Animation_GetLastFrame(anim), ANIMMODE_ONCE, -9.0f);
     func_80837530(play, this, 0x200);
 }
@@ -4356,7 +4375,8 @@ s32 func_80837818(Player* this) {
         sp18 = D_80854484[controlStickDirection];
         this->unk_845 = 0;
     } else {
-        if (Player_CanSpinAttack(this)) {
+        // Heretics Tomb: the katana has no spin attack, only slashes and the Iai draw
+        if (Player_CanSpinAttack(this) && !Katana_On(this)) {
             sp18 = PLAYER_MWA_SPIN_ATTACK_1H;
         } else {
             if (controlStickDirection <= PLAYER_STICK_DIR_NONE) {
@@ -4379,6 +4399,11 @@ s32 func_80837818(Player* this) {
 
             if (this->heldItemAction == PLAYER_IA_DEKU_STICK) {
                 sp18 = PLAYER_MWA_FORWARD_SLASH_1H;
+            }
+            // Heretics Tomb: the katana has one cut, a horizontal sweep (no stabs, no overhead chops)
+            if (Katana_On(this)) {
+                this->stateFlags2 &= ~PLAYER_STATE2_SWORD_LUNGE;
+                sp18 = PLAYER_MWA_RIGHT_SLASH_1H;
             }
         }
 
@@ -4421,6 +4446,9 @@ void func_80837948(PlayState* play, Player* this, s32 arg2) {
     }
 
     this->unk_845++;
+    if (Katana_On(this) && (this->unk_845 >= 3) && (arg2 <= PLAYER_MWA_STAB_COMBO_2H)) {
+        this->unk_845 = 1; // Heretics Tomb: every katana sweep is the same sweep, never a combo finisher
+    }
     if (this->unk_845 >= 3) {
         arg2 += 2;
     }
@@ -4448,6 +4476,20 @@ void func_80837948(PlayState* play, Player* this, s32 arg2) {
         }
     } else {
         dmgFlags = D_80854488[temp][0];
+    }
+
+    // Heretics Tomb: katana slashes deal Kokiri Sword damage and cost magic.
+    // The finishing half of a jump/flip slash belongs to the same attack, so it isn't charged again.
+    if (Katana_On(this)) {
+        // D_80854488 rows follow PLAYER_MELEEWEAPON_* - 1: row 0 is the Master Sword, row 1 the Kokiri Sword
+        dmgFlags = D_80854488[1][((arg2 >= PLAYER_MWA_FLIPSLASH_START) && (arg2 <= PLAYER_MWA_JUMPSLASH_FINISH)) ? 1 : 0];
+        if ((arg2 != PLAYER_MWA_FLIPSLASH_FINISH) && (arg2 != PLAYER_MWA_JUMPSLASH_FINISH)) {
+            Katana_OnSwingStart(play, this);
+        }
+        // A paid Iai draw cuts with Biggoron's Sword strength (row 2, jump-slash column)
+        if (Katana_IsIaiStrikeActive()) {
+            dmgFlags = D_80854488[2][1];
+        }
     }
 
     func_80837918(this, 0, dmgFlags);
@@ -6284,6 +6326,11 @@ s32 func_8083BB20(Player* this) {
     if (!(this->stateFlags1 & PLAYER_STATE1_SHIELDING) && (Player_GetMeleeWeaponHeld(this) != 0)) {
         if (sUseHeldItem ||
             ((this->actor.category != ACTORCAT_PLAYER) && CHECK_BTN_ALL(sControlInput->press.button, BTN_B))) {
+            // Heretics Tomb: the katana can't swing on an empty magic meter
+            if ((this->actor.category == ACTORCAT_PLAYER) && !Katana_HammerFree(this, Katana_CanSwing())) {
+                Sfx_PlaySfxCentered(NA_SE_SY_ERROR);
+                return 0;
+            }
             return 1;
         }
     }
@@ -6352,7 +6399,7 @@ s32 Player_ActionHandler_10(Player* this, PlayState* play) {
                         Player_SetupRoll(this, play);
                     }
                 } else {
-                    if ((Player_GetMeleeWeaponHeld(this) != 0) && Player_CanUpdateItems(this)) {
+                    if ((Player_GetMeleeWeaponHeld(this) != 0) && Player_CanUpdateItems(this) && Katana_HammerFree(this, Katana_CanSwing())) {
                         func_8083BA90(play, this, PLAYER_MWA_JUMPSLASH_START, 5.0f, 5.0f);
                     } else {
                         Player_SetupRoll(this, play);
@@ -6536,7 +6583,9 @@ s32 Player_ActionHandler_8(Player* this, PlayState* play) {
     if (CHECK_BTN_ALL(sControlInput->cur.button, BTN_B)) {
         if (!(this->stateFlags1 & PLAYER_STATE1_SHIELDING) && (Player_GetMeleeWeaponHeld(this) != 0) &&
             (this->unk_844 == 1) && (this->heldItemAction != PLAYER_IA_DEKU_STICK)) {
-            if ((this->heldItemAction != PLAYER_IA_SWORD_BIGGORON) || (gSaveContext.swordHealth > 0.0f)) {
+            // Heretics Tomb: no Iai charge without enough magic for the release
+            if (((this->heldItemAction != PLAYER_IA_SWORD_BIGGORON) || (gSaveContext.swordHealth > 0.0f)) &&
+                Katana_HammerFree(this, Katana_CanCharge())) {
                 func_808377DC(play, this);
                 return 1;
             }
@@ -8256,7 +8305,8 @@ void Player_ChooseNextIdleAnim(PlayState* play, Player* this) {
     s32 fidgetType;
     s32 commonType;
 
-    if ((this->focusActor != NULL) ||
+    // Heretics Tomb: no fidgets with the katana in hand (some swing or rest the sword - through Link, with this blade)
+    if ((this->focusActor != NULL) || (Katana_On(this) && (this->heldItemAction == PLAYER_IA_SWORD_MASTER)) ||
         (!(heathIsCritical = HealthMeter_IsCritical()) && ((this->idleType = (this->idleType + 1) & 1) != 0))) {
         this->stateFlags2 &= ~PLAYER_STATE2_IDLE_FIDGET;
         anim = Player_GetIdleAnim(this);
@@ -9026,6 +9076,11 @@ s32 func_808428D8(Player* this, PlayState* play) {
         return 0;
     }
 
+    // Heretics Tomb: no crouch stab with the katana (only its slashes and the Iai draw)
+    if (Katana_On(this)) {
+        return 0;
+    }
+
     Player_AnimPlayOnce(play, this, &gPlayerAnim_link_normal_defense_kiru);
     this->av1.actionVar1 = 1;
     this->meleeWeaponAnimation = PLAYER_MWA_STAB_1H;
@@ -9212,6 +9267,12 @@ s32 func_80842DF4(PlayState* play, Player* this) {
         }
 
         temp1 = (this->meleeWeaponQuads[0].base.atFlags & AT_HIT) || (this->meleeWeaponQuads[1].base.atFlags & AT_HIT);
+
+        if (temp1 && Katana_On(this)) {
+            // Heretics Tomb: the katana's blade carries its cold too (fire enemies lose their flames, Dodongos freeze)
+            Katana_OnBladeHit(play, (this->meleeWeaponQuads[0].base.atFlags & AT_HIT) ? this->meleeWeaponQuads[0].base.at
+                                                                                     : this->meleeWeaponQuads[1].base.at);
+        }
 
         if (temp1) {
             if (this->meleeWeaponAnimation < PLAYER_MWA_SPIN_ATTACK_1H) {
@@ -9901,6 +9962,8 @@ void Player_Action_80844AF4(Player* this, PlayState* play) {
     }
 }
 
+void func_80844D68(Player* this, PlayState* play);
+
 s32 func_80844BE4(Player* this, PlayState* play) {
     s32 temp;
 
@@ -9908,6 +9971,21 @@ s32 func_80844BE4(Player* this, PlayState* play) {
         this->stateFlags2 |= PLAYER_STATE2_SPIN_ATTACKING;
     } else {
         if (!CHECK_BTN_ALL(sControlInput->cur.button, BTN_B)) {
+            // Heretics Tomb: the Iai draw only fires from a full charge; letting go early just lowers the blade
+            if (Katana_On(this) && (this->unk_858 < 0.85f)) {
+                func_80844D68(this, play);
+                return 1;
+            }
+            // Heretics Tomb: a full katana charge releases as a single horizontal Iai cut, never a spin
+            if (Katana_On(this)) {
+                Katana_BeginIaiRelease();
+                // the draw itself, slowed right down (z_player_lib.c sweeps the arm from his right hip to high on his
+                // left over it): a gather, the cut with a step in, then the finish held
+                func_80837948(play, this, PLAYER_MWA_RIGHT_SLASH_1H);
+                this->skelAnime.playSpeed = KATANA_IAI_DRAW_SPEED;
+                Player_SetInvulnerability(this, -8);
+                return 1;
+            }
             if ((this->unk_858 >= 0.85f) || Player_CanSpinAttack(this)) {
                 temp = D_80854384[Player_HoldsTwoHandedWeapon(this)];
             } else {
@@ -9940,14 +10018,24 @@ void func_80844D30(Player* this, PlayState* play) {
 void func_80844D68(Player* this, PlayState* play) {
     func_80839FFC(this, play);
     func_80832318(this);
-    Player_AnimChangeOnceMorph(play, this, D_80854368[Player_HoldsTwoHandedWeapon(this)]);
+    Player_AnimChangeOnceMorph(play, this, D_80854368[Katana_On(this) ? 0 : Player_HoldsTwoHandedWeapon(this)]);
     this->yaw = this->actor.shape.rot.y;
+}
+
+// Heretics Tomb: while the katana's Iai charges, Link holds the one-handed charge crouch (the two-handed one turns
+// his body away; z_player_lib.c places his arms)
+static void Player_KatanaHoldIaiPose(PlayState* play, Player* this) {
+    Player_AnimPlayLoop(play, this, D_80854360[0]);
 }
 
 void func_80844DC8(Player* this, PlayState* play) {
     Player_SetupAction(play, this, Player_Action_80844E68, 1);
     this->unk_868 = 0.0f;
-    Player_AnimPlayLoop(play, this, D_80854360[Player_HoldsTwoHandedWeapon(this)]);
+    if (Katana_On(this)) {
+        Player_KatanaHoldIaiPose(play, this);
+    } else {
+        Player_AnimPlayLoop(play, this, D_80854360[Player_HoldsTwoHandedWeapon(this)]);
+    }
     this->av2.actionVar2 = 1;
 }
 
@@ -9966,7 +10054,11 @@ void Player_Action_80844E68(Player* this, PlayState* play) {
         Player_FinishAnimMovement(this);
         Player_SetParallel(this);
         this->stateFlags1 &= ~PLAYER_STATE1_PARALLEL;
-        Player_AnimPlayLoop(play, this, D_80854360[Player_HoldsTwoHandedWeapon(this)]);
+        if (Katana_On(this)) {
+            Player_KatanaHoldIaiPose(play, this);
+        } else {
+            Player_AnimPlayLoop(play, this, D_80854360[Player_HoldsTwoHandedWeapon(this)]);
+        }
         this->av2.actionVar2 = -1;
     }
 
@@ -9982,7 +10074,7 @@ void Player_Action_80844E68(Player* this, PlayState* play) {
             } else if (!CHECK_BTN_ALL(sControlInput->cur.button, BTN_B)) {
                 func_80844D68(this, play);
             }
-        } else if (!func_80844BE4(this, play)) {
+        } else if (!func_80844BE4(this, play) && !Katana_On(this)) { // Heretics Tomb: the Iai stance is planted
             Player_GetMovementSpeedAndYaw(this, &speedTarget, &yawTarget, SPEED_MODE_LINEAR, play);
 
             temp = func_80840058(this, &speedTarget, &yawTarget, play);
@@ -11773,6 +11865,44 @@ static Vec3f D_80854814 = { 0.0f, 0.0f, 200.0f };
 static f32 sWaterConveyorSpeeds[] = { 2.0f, 4.0f, 7.0f };
 static f32 sFloorConveyorSpeeds[] = { 0.5f, 1.0f, 3.0f };
 
+// Heretics Tomb: the katana lives in its scabbard. It comes out to cut (B draws it straight into the swing, as
+// vanilla does with a sheathed sword) and goes back in on its own: a moment after the last cut, at once when Link
+// leaves the ground (a jump, a drop) outside an attack. Locked on to an enemy, or crouched, it stays out. Instant, no put-away animation: the hand just lets it go
+// (z_player_lib.c draws it in the scabbard on his right hip whenever it isn't in his hand).
+static s16 sKatanaOutTimer = KATANA_SHEATHE_DELAY;
+
+static void Player_KatanaAutoSheathe(PlayState* play, Player* this) {
+    s32 busy;
+
+    if ((this->actor.category != ACTORCAT_PLAYER) || !Katana_On(this) ||
+        (this->heldItemAction != PLAYER_IA_SWORD_MASTER) || (this->itemAction != this->heldItemAction) ||
+        (this->stateFlags1 & (PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_START_CHANGING_HELD_ITEM | PLAYER_STATE1_DEAD |
+                              PLAYER_STATE1_IN_ITEM_CS | PLAYER_STATE1_TALKING))) {
+        sKatanaOutTimer = KATANA_SHEATHE_DELAY;
+        return;
+    }
+    busy = (this->meleeWeaponState != 0) || (this->stateFlags1 & PLAYER_STATE1_CHARGING_SPIN_ATTACK) ||
+           (this->stateFlags2 & PLAYER_STATE2_SPIN_ATTACKING) || (this->actionFunc == Player_Action_808502D0) ||
+           (this->actionFunc == Player_Action_80844AF4) || (this->actionFunc == Player_Action_808505DC) ||
+           (this->actionFunc == Player_Action_80844E68) || (this->actionFunc == Player_Action_80845000) ||
+           (this->actionFunc == Player_Action_80845308) ||
+           (this->stateFlags1 & (PLAYER_STATE1_HOSTILE_LOCK_ON | PLAYER_STATE1_SHIELDING)); // in a fight / crouched
+    if (busy) {
+        sKatanaOutTimer = KATANA_SHEATHE_DELAY;
+        return;
+    }
+    if (sKatanaOutTimer > 0) {
+        sKatanaOutTimer--;
+    }
+    if ((sKatanaOutTimer == 0) || !(this->actor.bgCheckFlags & BGCHECKFLAG_GROUND)) {
+        this->nextModelGroup = Player_ActionToModelGroup(this, PLAYER_IA_NONE);
+        Player_InitItemActionWithAnim(play, this, PLAYER_IA_NONE);
+        this->heldItemId = ITEM_NONE;
+        func_808328EC(this, NA_SE_IT_SWORD_PUTAWAY);
+        sKatanaOutTimer = KATANA_SHEATHE_DELAY;
+    }
+}
+
 void Player_UpdateCommon(Player* this, PlayState* play, Input* input) {
     s32 pad;
 
@@ -12164,6 +12294,8 @@ void Player_UpdateCommon(Player* this, PlayState* play, Input* input) {
 
         AnimationContext_SetNextQueue(play);
     }
+
+    Player_KatanaAutoSheathe(play, this);
 
     Math_Vec3f_Copy(&this->actor.home.pos, &this->actor.world.pos);
     Math_Vec3f_Copy(&this->unk_A88, &this->bodyPartsPos[PLAYER_BODYPART_WAIST]);
@@ -13710,7 +13842,7 @@ void Player_Action_8084D3E4(Player* this, PlayState* play) {
         this->actor.parent = NULL;
         AREG(6) = 0;
 
-        if (Flags_GetEventChkInf(EVENTCHKINF_EPONA_OBTAINED) || (DREG(1) != 0)) {
+        if (Flags_GetEventChkInf(EVENTCHKINF_EPONA_OBTAINED) || HtHorse_BlackOwned() || (DREG(1) != 0)) {
             gSaveContext.horseData.pos.x = rideActor->actor.world.pos.x;
             gSaveContext.horseData.pos.y = rideActor->actor.world.pos.y;
             gSaveContext.horseData.pos.z = rideActor->actor.world.pos.z;
@@ -14001,6 +14133,11 @@ s32 func_8084DFF4(PlayState* play, Player* this) {
             giEntry = this->getItemEntry;
         }
         this->av1.actionVar1 = 1;
+        if (Katana_TryChestGet(play, &this->actor, giEntry.getItemId, giEntry.modIndex)) {
+            equipNow = false;
+            Player_SetPendingFlag(this, play);
+            return 0;
+        }
         equipItem = giEntry.itemId;
         equipNow = CVarGetInteger(CVAR_ENHANCEMENT("AskToEquip"), 0) && giEntry.modIndex == MOD_NONE &&
                    equipItem >= ITEM_SWORD_KOKIRI && equipItem <= ITEM_TUNIC_ZORA && CHECK_AGE_REQ_ITEM(equipItem);
@@ -15047,6 +15184,11 @@ void Player_Action_808502D0(Player* this, PlayState* play) {
             this->stateFlags2 &= ~PLAYER_STATE2_SWORD_LUNGE;
         }
 
+        // Heretics Tomb: the Iai draw steps in with the cut
+        if (Katana_On(this) && Katana_IsIaiStrikeActive() && LinkAnimation_OnFrame(&this->skelAnime, 1.0f)) {
+            this->linearVelocity = KATANA_IAI_STEP_SPEED;
+        }
+
         if (this->linearVelocity > 12.0f) {
             func_8084269C(play, this);
         }
@@ -15073,7 +15215,13 @@ void Player_Action_808502D0(Player* this, PlayState* play) {
                     sp3C = &gPlayerAnim_link_fighter_power_jump_kiru_end;
                 }
 
-                func_8083A098(this, sp3C, play);
+                if (Katana_On(this) && Katana_IsIaiStrikeActive()) {
+                    // Heretics Tomb: the Iai finish is held, and Link can't act until it's over
+                    Player_SetupAction(play, this, Player_Action_808505DC, 0);
+                    LinkAnimation_PlayOnceSetSpeed(play, &this->skelAnime, sp3C, KATANA_IAI_FINISH_SPEED);
+                } else {
+                    func_8083A098(this, sp3C, play);
+                }
 
                 this->skelAnime.movementFlags = sp43;
                 this->stateFlags3 |= PLAYER_STATE3_FINISHED_ATTACKING;

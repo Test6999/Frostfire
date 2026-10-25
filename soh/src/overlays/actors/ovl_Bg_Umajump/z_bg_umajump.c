@@ -5,6 +5,7 @@
  */
 
 #include "z_bg_umajump.h"
+#include "soh/Enhancements/HereticsTomb/HtHorse.h"
 #include "objects/object_umajump/object_umajump.h"
 
 #define FLAGS 0
@@ -42,7 +43,7 @@ void BgUmaJump_Init(Actor* thisx, PlayState* play) {
     this->dyna.bgId = DynaPoly_SetBgActor(play, &play->colCtx.dyna, &this->dyna.actor, colHeader);
 
     if (this->dyna.actor.params == 1) {
-        if (!Flags_GetEventChkInf(EVENTCHKINF_EPONA_OBTAINED) && (DREG(1) == 0)) {
+        if (!HtHorse_HasHorse(play) && (DREG(1) == 0)) { // (Heretics Tomb: or the black horse)
             Actor_Kill(&this->dyna.actor);
             return;
         }
