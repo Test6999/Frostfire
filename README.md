@@ -1,6 +1,6 @@
 Platform: Linux
 Version: 9.3.1
-This is a Fork: Not made or to be maintained by HM team nor are they to be held responsible for this mod, i appreciate their goodwill in letting me advertise here.
+This is a Fork: Not made or to be maintained by HarboursMaster team.
 AI Disclosure: This has been fully made using Opus 5.5, for everything, I don't have a keyboard in front of me, only a phone to give ideas and send feedback, and a controller to test builds.
 
 A full extra dungeon mod for Ship of Harkinian version 9.3.1 (I may make it forward compatible for future builds, or not, in which case rename the appimage to not lose it overtime).
